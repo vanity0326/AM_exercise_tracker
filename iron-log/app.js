@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v7";
+const APP_VERSION = "v8";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -204,7 +204,6 @@ function render() {
   if (state.tab === "progress") app.appendChild(renderProgress());
 
   app.appendChild(renderFab());
-  app.appendChild(renderImportFab());
 }
 
 function renderOfflineBanner() {

@@ -105,8 +105,9 @@ button.primary:hover{background:#0f6e56;border-color:#0f6e56}
 .sync-note.synced{color:var(--accent);font-style:normal;font-weight:600}
 .sync-note.partial{color:#ba7517;font-style:normal;font-weight:600}
 .lifting-divider{border:none;border-top:2px solid var(--ink);margin-bottom:1.25rem}
-.lifting-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.25rem}
+.lifting-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
 .lifting-day-title{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.06em}
+.empty-mobility{font-size:12px;color:var(--ink-3);font-style:italic;padding:8px 0}
 .lift-table{width:100%;border-collapse:collapse;table-layout:fixed}
 .lift-table th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--ink-3);padding:4px 6px 6px 0;border-bottom:1px solid var(--paper-3);text-align:left}
 .lift-table td{padding:5px 4px 5px 0;border-bottom:1px solid var(--paper-3);vertical-align:middle}
@@ -136,45 +137,48 @@ button.primary:hover{background:#0f6e56;border-color:#0f6e56}
 
 /* PRINT */
 @media print {
-  @page{size:letter landscape;margin:0.45in 0.5in}
-  body{padding:0;background:white;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:letter landscape;margin:0.3in 0.35in}
+  body{padding:0;background:white;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .page{max-width:100%}
   .action-row,.val-msg,.mantra,.session-grid,.two-col,.tog-btn,.commute-btn,.nav-link,.sync-note{display:none!important}
-  .masthead{margin-bottom:0.5rem;padding-bottom:0.4rem}
-  .masthead h1{font-size:15px}
-  .meta-input,.week-input{font-size:13px}
+  .masthead{margin-bottom:0.35rem;padding-bottom:0.3rem}
+  .masthead h1{font-size:13px}
+  .meta-input,.week-input{font-size:11px}
   .section-title{display:none}
-  .week-grid{gap:4px;margin-bottom:0.5rem;page-break-inside:avoid;break-inside:avoid}
-  .day-cell{min-height:65px;border:1.5px solid var(--ink-3)}
+  .week-grid{gap:3px;margin-bottom:0.35rem;page-break-inside:avoid;break-inside:avoid}
+  .day-cell{min-height:52px;border:1.5px solid var(--ink-3)}
   .day-cell.is-sunday{border:1.5px solid var(--ink-3)}
-  .day-hdr{padding:3px 5px;font-size:10px;background:transparent}
+  .day-hdr{padding:2px 4px;font-size:9px;background:transparent}
   .is-sunday .day-hdr{color:var(--ink-3)}
-  .day-body{padding:4px 5px;min-height:55px}
+  .day-body{padding:3px 4px;min-height:42px}
   .pick-label{display:none}
-  .day-sel{font-size:13px;border:none;background:transparent;padding:1px 0}
-  .day-sel.levelup{font-size:14px;border:none;padding:1px 0}
-  .summary-bar{padding:6px 10px;margin-bottom:0.5rem;page-break-inside:avoid;break-inside:avoid;border:1px solid #ccc}
-  .sum-val{font-size:16px}
-  .sum-lbl{font-size:9px}
-  .sum-div{height:22px}
-  .lifting-section{margin-top:0.5rem}
-  .lifting-divider{margin-bottom:0.5rem}
-  .lifting-grid{gap:1rem;page-break-inside:avoid;break-inside:avoid}
-  .lifting-day-title{font-size:11px;margin-bottom:0.3rem}
-  .lift-table th{font-size:9px;padding:2px 4px 3px 0}
-  .lift-table td{padding:3px 3px 3px 0}
-  .ex-inp{font-size:11px;border:none}
-  .lbs-inp{font-size:11px;width:30px;border:none;border-bottom:0.5px solid #ccc}
-  .reps-inp{font-size:11px;width:26px;border:none;border-bottom:0.5px solid #ccc}
-  .set-unit{font-size:9px}
-  .notes-inp{font-size:11px;border:none;border-bottom:0.5px solid #ccc}
-  .overall-wrap{margin-top:0.5rem}
-  .overall-label{font-size:10px;margin-bottom:3px}
-  .overall-ta{border:none;border-bottom:0.5px solid #ccc;min-height:30px;font-size:11px;resize:none;border-radius:0;padding:2px 0}
-  .footer-wrap{border-top:none;padding-top:0.3rem;margin-top:0.3rem}
+  .day-sel{font-size:11px;border:none;background:transparent;padding:1px 0}
+  .day-sel.levelup{font-size:12px;border:none;padding:1px 0}
+  .summary-bar{padding:4px 8px;margin-bottom:0.35rem;page-break-inside:avoid;break-inside:avoid;border:1px solid #ccc}
+  .sum-val{font-size:14px}
+  .sum-lbl{font-size:8px}
+  .sum-div{height:18px}
+  .lifting-section{margin-top:0.35rem}
+  .lifting-divider{margin-bottom:0.35rem}
+  .lifting-grid{gap:0.6rem;page-break-inside:avoid;break-inside:avoid}
+  .lifting-day-title{font-size:10px;margin-bottom:0.2rem}
+  .col-ex{width:36%}
+  .col-notes{width:10%}
+  .lift-table th{font-size:7.5px;padding:1px 2px 2px 0}
+  .lift-table td{padding:2px 2px 2px 0}
+  .ex-inp{font-size:8.5px;border:none}
+  .lbs-inp{font-size:8.5px;width:24px;border:none;border-bottom:0.5px solid #ccc}
+  .reps-inp{font-size:8.5px;width:20px;border:none;border-bottom:0.5px solid #ccc}
+  .set-unit{font-size:7px}
+  .notes-inp{font-size:8.5px;border:none;border-bottom:0.5px solid #ccc}
+  .empty-mobility{font-size:8px;padding:2px 0}
+  .overall-wrap{margin-top:0.35rem}
+  .overall-label{font-size:9px;margin-bottom:2px}
+  .overall-ta{border:none;border-bottom:0.5px solid #ccc;min-height:20px;font-size:9px;resize:none;border-radius:0;padding:2px 0}
+  .footer-wrap{border-top:none;padding-top:0.25rem;margin-top:0.25rem}
   .footer-note{display:none}
-  .footer-quote{display:block;font-size:10px;color:#555}
-  .quote-author{font-size:10px}
+  .footer-quote{display:block;font-size:9px;color:#555}
+  .quote-author{font-size:9px}
 }
 </style>
 </head>
@@ -205,16 +209,15 @@ button.primary:hover{background:#0f6e56;border-color:#0f6e56}
     <p class="section-title">5 Steps — In Order</p>
     <ul class="step-list">
       <li><span class="step-num">01</span>Check schedule — mark commute days using the ⇄ button</li>
-      <li><span class="step-num">02</span>Sunday swim is already placed — it's done</li>
+      <li><span class="step-num">02</span>Place your cardio for the week — swim or elliptical, any day, including Sunday if you want</li>
       <li><span class="step-num">03</span>Place upper and lower lifting — no back-to-back days</li>
-      <li><span class="step-num">04</span>Fill in Core Toning, mobility, and remaining cardio</li>
+      <li><span class="step-num">04</span>Fill in Core Toning and Mobility for the week</li>
       <li><span class="step-num">05</span>Add a Level Up option for each day, then confirm 1 rest day</li>
     </ul>
   </div>
   <div>
     <p class="section-title">Non-Negotiable Rules</p>
     <div class="rules-box">
-      <div class="rule-item"><div class="rule-dot"></div>Sunday = swim, always</div>
       <div class="rule-item"><div class="rule-dot"></div>Upper + lower lifting: at least 1 day apart</div>
       <div class="rule-item"><div class="rule-dot"></div>Commute day = walk at lunch, or home treadmill</div>
       <div class="rule-item"><div class="rule-dot"></div>1 real rest day minimum every week</div>
@@ -281,6 +284,13 @@ button.primary:hover{background:#0f6e56;border-color:#0f6e56}
       <table class="lift-table">
         <thead><tr><th class="col-ex">Exercise</th><th class="col-set">Set 1</th><th class="col-set">Set 2</th><th class="col-set">Set 3</th><th class="col-notes">Notes</th></tr></thead>
         <tbody id="lower-tbody"></tbody>
+      </table>
+    </div>
+    <div>
+      <p class="lifting-day-title">Mobility</p>
+      <table class="lift-table">
+        <thead><tr><th class="col-ex">Exercise</th><th class="col-set">Set 1</th><th class="col-set">Set 2</th><th class="col-set">Set 3</th><th class="col-notes">Notes</th></tr></thead>
+        <tbody id="mobility-tbody"></tbody>
       </table>
     </div>
   </div>
@@ -414,11 +424,14 @@ function getLiftingData() {
   const lib = loadIronLogLibrary();
   const hasUpper = lib && Array.isArray(lib.upper) && lib.upper.length > 0;
   const hasLower = lib && Array.isArray(lib.lower) && lib.lower.length > 0;
+  const hasMobility = lib && Array.isArray(lib.mobility) && lib.mobility.length > 0;
   return {
     upper: hasUpper ? lib.upper.map(exToRow) : DEFAULT_UPPER_EX,
     lower: hasLower ? lib.lower.map(exToRow) : DEFAULT_LOWER_EX,
+    mobility: hasMobility ? lib.mobility.map(exToRow) : [],
     hasUpper,
     hasLower,
+    hasMobility,
   };
 }
 
@@ -586,7 +599,6 @@ function checkPlan() {
 
 function clearAll() {
   DAYS.forEach(function(d){ sel[d.id] = {primary:'', levelup:'', commute:'walk-lunch'}; });
-  sel['sun'] = {primary:'swim', levelup:'', commute:'walk-lunch'};
   commute.clear();
   buildGrid();
   updateSummary();
@@ -598,44 +610,50 @@ function clearAll() {
 function buildLiftingTables() {
   var upperBody = document.getElementById('upper-tbody');
   var lowerBody = document.getElementById('lower-tbody');
+  var mobilityBody = document.getElementById('mobility-tbody');
   if (!upperBody || !lowerBody) return;
 
   var data = getLiftingData();
 
-  upperBody.innerHTML = data.upper.map(function(ex, i) {
-    return '<tr>' +
-      '<td><input class="ex-inp" type="text" value="' + ex[0] + '" /></td>' +
-      '<td>' + setCell(ex[1], ex[2], 'u'+i+'s1', ex[7]) + '</td>' +
-      '<td>' + setCell(ex[3], ex[4], 'u'+i+'s2', ex[7]) + '</td>' +
-      '<td>' + setCell(ex[5], ex[6], 'u'+i+'s3', ex[7]) + '</td>' +
-      '<td><input class="notes-inp" type="text" /></td>' +
-      '</tr>';
-  }).join('');
+  function rowsHtml(rows, prefix) {
+    return rows.map(function(ex, i) {
+      return '<tr>' +
+        '<td><input class="ex-inp" type="text" value="' + ex[0] + '" /></td>' +
+        '<td>' + setCell(ex[1], ex[2], prefix+i+'s1', ex[7]) + '</td>' +
+        '<td>' + setCell(ex[3], ex[4], prefix+i+'s2', ex[7]) + '</td>' +
+        '<td>' + setCell(ex[5], ex[6], prefix+i+'s3', ex[7]) + '</td>' +
+        '<td><input class="notes-inp" type="text" /></td>' +
+        '</tr>';
+    }).join('');
+  }
 
-  lowerBody.innerHTML = data.lower.map(function(ex, i) {
-    return '<tr>' +
-      '<td><input class="ex-inp" type="text" value="' + ex[0] + '" /></td>' +
-      '<td>' + setCell(ex[1], ex[2], 'l'+i+'s1', ex[7]) + '</td>' +
-      '<td>' + setCell(ex[3], ex[4], 'l'+i+'s2', ex[7]) + '</td>' +
-      '<td>' + setCell(ex[5], ex[6], 'l'+i+'s3', ex[7]) + '</td>' +
-      '<td><input class="notes-inp" type="text" /></td>' +
-      '</tr>';
-  }).join('');
+  upperBody.innerHTML = rowsHtml(data.upper, 'u');
+  lowerBody.innerHTML = rowsHtml(data.lower, 'l');
+  if (mobilityBody) {
+    mobilityBody.innerHTML = data.mobility.length
+      ? rowsHtml(data.mobility, 'm')
+      : '<tr><td colspan="5" class="empty-mobility">No mobility exercises added in Iron Log yet.</td></tr>';
+  }
 
   var syncNote = document.getElementById('syncNote');
   if (syncNote) {
-    var bothSynced = data.hasUpper && data.hasLower;
-    var noneSynced = !data.hasUpper && !data.hasLower;
+    var checks = [
+      { has: data.hasUpper, label: 'Upper' },
+      { has: data.hasLower, label: 'Lower' },
+      { has: data.hasMobility, label: 'Mobility' },
+    ];
+    var synced = checks.filter(function(c){ return c.has; });
+    var missing = checks.filter(function(c){ return !c.has; });
     var text, cls;
-    if (bothSynced) {
+    if (missing.length === 0) {
       text = '✓ Synced from Iron Log — weights below are your current progressed numbers, edit freely for this week.';
       cls = 'synced';
-    } else if (noneSynced) {
-      text = 'Using saved defaults for both tables — add exercises in Iron Log, then reopen this planner to sync live weights.';
+    } else if (synced.length === 0) {
+      text = 'Using saved defaults — add exercises in Iron Log, then reopen this planner to sync live weights.';
       cls = '';
     } else {
-      var missing = data.hasUpper ? 'Lower' : 'Upper';
-      text = '⚠ Only partially synced — Upper/Lower table shows real Iron Log data, but ' + missing + ' is still showing saved defaults (no ' + missing.toLowerCase() + ' exercises found yet).';
+      var missingLabels = missing.map(function(c){ return c.label; }).join(', ');
+      text = '⚠ Partially synced — ' + missingLabels + ' still showing defaults/empty (no exercises found yet for ' + missingLabels.toLowerCase() + ').';
       cls = 'partial';
     }
     syncNote.textContent = text;
@@ -681,7 +699,6 @@ function loadQuote() {
 // ── INIT ──────────────────────────────────────────────────────────────────────
 
 DAYS.forEach(function(d){ sel[d.id] = {primary:'', levelup:'', commute:'walk-lunch'}; });
-sel['sun'] = {primary:'swim', levelup:'', commute:'walk-lunch'};
 buildGrid();
 updateSummary();
 buildLiftingTables(); // instant render from whatever's cached, then refresh below

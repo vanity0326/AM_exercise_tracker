@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v8";
+const APP_VERSION = "v9";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -17,7 +17,27 @@ const EXERCISE_DAYS = DAYS.filter((d) => d.loggable);
 const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [] };
 
 const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
-const TARGET_REPS = 10;
+const DEFAULT_TARGET_REPS = 10;
+const DEFAULT_TARGET_SECONDS = 30;
+const BODYWEIGHT_REP_BUMP = 2;
+const TIME_BUMP_SECONDS = 10;
+
+// Every exercise has a trackType controlling how it's logged:
+//   weight     — lbs + reps per set (default, e.g. Chest Press)
+//   bodyweight — reps only per set, no weight (e.g. Cat-Cow)
+//   time       — seconds held per set, no weight (e.g. a static stretch)
+const TRACK_TYPES = {
+  weight: { label: "Weight + Reps" },
+  bodyweight: { label: "Bodyweight (reps only)" },
+  time: { label: "Time held (seconds)" },
+};
+function exTarget(ex) {
+  if (ex.target != null) return ex.target;
+  return ex.trackType === "time" ? DEFAULT_TARGET_SECONDS : DEFAULT_TARGET_REPS;
+}
+function exUnitLabel(ex) {
+  return ex.trackType === "time" ? "sec" : "reps";
+}
 
 // ---------- Storage ----------
 const LS_LIB = "iron-log-library";
@@ -83,10 +103,17 @@ function saveBank(bank) {
 function bankKey(name) {
   return name.trim().toLowerCase();
 }
-function upsertBank(name, type, weights) {
-  const key = bankKey(name);
+// Accepts a full exercise-like object: { name, type, trackType, weights, target }
+function upsertBank(ex) {
+  const key = bankKey(ex.name);
   if (!key) return;
-  bank[key] = { name: name.trim(), type, weights: [...weights] };
+  bank[key] = {
+    name: ex.name.trim(),
+    type: ex.type || "other",
+    trackType: ex.trackType || "weight",
+    weights: ex.weights ? [...ex.weights] : [20, 20, 20],
+    target: ex.target != null ? ex.target : null,
+  };
   saveBank(bank);
 }
 
@@ -364,11 +391,16 @@ function renderToday() {
   const tabCursor = makeTabCursor();
   dayExercises.forEach((ex) => {
     const entry = todayLog.entries?.[ex.id];
-    const sets = entry?.sets || ex.weights.map((w) => ({ weight: w, reps: null }));
+    const sets = entry?.sets || defaultSets(ex);
     wrap.appendChild(renderExerciseCard(ex, sets, tabCursor.next(), current.id));
   });
 
   return wrap;
+}
+
+function defaultSets(ex) {
+  if (ex.trackType === "weight") return ex.weights.map((w) => ({ weight: w, reps: null }));
+  return [{ weight: null, reps: null }, { weight: null, reps: null }, { weight: null, reps: null }];
 }
 
 // Hands out sequential tabindex blocks of 6 (3 weight inputs + 3 reps inputs)
@@ -380,34 +412,40 @@ function makeTabCursor() {
 }
 
 function renderExerciseCard(ex, sets, tabStart, dayId) {
-  const allTopped = computeAllTopped(sets);
+  const target = exTarget(ex);
+  const unit = exUnitLabel(ex);
+  const allTopped = computeAllTopped(sets, target);
+  const targetLabel = ex.trackType === "time" ? `${target}s held` : `${target} reps`;
 
   const card = el(`<div class="ex-card ${allTopped ? "topped" : ""}" data-ex-id="${ex.id}"></div>`);
   const top = el(`
     <div class="ex-card-top">
       <div>
         <div class="ex-name">${ex.name}</div>
-        <div class="ex-target">Target ${TARGET_REPS} reps · set 3</div>
+        <div class="ex-target">Target ${targetLabel} · set 3</div>
       </div>
       <div class="plate-stack"></div>
       <button class="ex-delete-btn" title="Remove exercise">✕</button>
     </div>
   `);
-  top.querySelector(".plate-stack").appendChild(buildPlates(sets));
+  top.querySelector(".plate-stack").appendChild(buildPlates(sets, target));
   top.querySelector(".ex-delete-btn").onclick = () => removeExerciseFromDay(dayId, ex.id);
   card.appendChild(top);
 
+  const isWeighted = ex.trackType === "weight";
   const setRow = el(`<div class="set-row"></div>`);
   sets.forEach((s, i) => {
     const col = el(`
       <div class="set-col">
-        <label>lbs</label>
-        <input type="number" value="${s.weight}" tabindex="${tabStart + i}" />
-        <input type="number" placeholder="reps" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${tabStart + 3 + i}" />
+        ${isWeighted ? `<label>lbs</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${unit === "sec" ? "hold" : "BW"}</label>`}
+        <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + 3 + i : tabStart + i}" />
       </div>
     `);
-    const [weightInput, repsInput] = col.querySelectorAll("input");
-    weightInput.onchange = (e) => updateSet(ex.id, i, "weight", Number(e.target.value));
+    const inputs = col.querySelectorAll("input");
+    const repsInput = inputs[inputs.length - 1];
+    if (isWeighted) {
+      inputs[0].onchange = (e) => updateSet(ex.id, i, "weight", Number(e.target.value));
+    }
     repsInput.onchange = (e) => {
       const val = e.target.value === "" ? null : Number(e.target.value);
       e.target.classList.toggle("has-reps", val != null);
@@ -424,16 +462,16 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   return card;
 }
 
-function computeAllTopped(sets) {
-  return sets.every((s) => s.reps != null && s.reps >= TARGET_REPS);
+function computeAllTopped(sets, target) {
+  return sets.every((s) => s.reps != null && s.reps >= target);
 }
 
-function buildPlates(sets) {
-  const allTopped = computeAllTopped(sets);
+function buildPlates(sets, target) {
+  const allTopped = computeAllTopped(sets, target);
   const frag = document.createDocumentFragment();
   sets.forEach((s, i) => {
     const filled = s.reps != null;
-    const isTop = filled && s.reps >= TARGET_REPS;
+    const isTop = filled && s.reps >= target;
     const flag = allTopped && i === sets.length - 1;
     const h = 34 + i * 5;
     frag.appendChild(el(`<div class="plate ${filled ? "filled" : ""} ${isTop ? "topped" : ""} ${flag ? "flag" : ""}" style="height:${h}px">${filled ? s.reps : i + 1}</div>`));
@@ -444,10 +482,18 @@ function buildPlates(sets) {
 function fillCardFooter(footer, ex, allTopped) {
   footer.innerHTML = "";
   if (!allTopped) return;
-  const bump = PROGRESSION_BUMP[ex.type] || PROGRESSION_BUMP.other;
-  footer.appendChild(el(`<div class="topped-note">● Topped out — next session try +${bump} lbs</div>`));
-  const applyBtn = el(`<button class="apply-btn">Apply +${bump} lbs for next session</button>`);
-  applyBtn.onclick = () => applyProgression(ex.id, bump);
+  let bumpLabel;
+  if (ex.trackType === "weight") {
+    const bump = PROGRESSION_BUMP[ex.type] || PROGRESSION_BUMP.other;
+    bumpLabel = `+${bump} lbs`;
+  } else if (ex.trackType === "time") {
+    bumpLabel = `+${TIME_BUMP_SECONDS}s hold`;
+  } else {
+    bumpLabel = `+${BODYWEIGHT_REP_BUMP} reps`;
+  }
+  footer.appendChild(el(`<div class="topped-note">● Topped out — next session try ${bumpLabel}</div>`));
+  const applyBtn = el(`<button class="apply-btn">Apply ${bumpLabel} for next session</button>`);
+  applyBtn.onclick = () => applyProgression(ex.id);
   footer.appendChild(applyBtn);
 }
 
@@ -459,11 +505,12 @@ function refreshExerciseCard(exId, sets) {
   if (!ex) return;
   const card = document.querySelector(`.ex-card[data-ex-id="${cssEscape(exId)}"]`);
   if (!card) return;
-  const allTopped = computeAllTopped(sets);
+  const target = exTarget(ex);
+  const allTopped = computeAllTopped(sets, target);
   card.classList.toggle("topped", allTopped);
   const plateStack = card.querySelector(".plate-stack");
   plateStack.innerHTML = "";
-  plateStack.appendChild(buildPlates(sets));
+  plateStack.appendChild(buildPlates(sets, target));
   fillCardFooter(card.querySelector(".ex-card-footer"), ex, allTopped);
 }
 
@@ -493,7 +540,7 @@ function updateSet(exId, idx, field, value) {
   const dayId = selectedDayInfo()?.id || state.selectedDayId;
   const date = state.selectedDate;
   const ex = allExercises()[exId];
-  const current = logs[date]?.entries?.[exId]?.sets || ex.weights.map((w) => ({ weight: w, reps: null }));
+  const current = logs[date]?.entries?.[exId]?.sets || defaultSets(ex);
   const newSets = current.map((s, i) => (i === idx ? { ...s, [field]: value } : s));
 
   if (!logs[date]) logs[date] = { dayId, entries: {} };
@@ -501,24 +548,31 @@ function updateSet(exId, idx, field, value) {
   logs[date].entries[exId] = { sets: newSets };
   saveLogs(logs);
 
-  if (field === "weight") {
-    upsertBank(ex.name, ex.type, newSets.map((s) => s.weight));
+  if (field === "weight" && ex.trackType === "weight") {
+    upsertBank({ name: ex.name, type: ex.type, trackType: ex.trackType, weights: newSets.map((s) => s.weight), target: ex.target });
   }
 
   refreshExerciseCard(exId, newSets);
   refreshActiveDayPillDone();
 }
 
-function applyProgression(exId, bump) {
+function applyProgression(exId) {
   const dayId = selectedDayInfo()?.id || state.selectedDayId;
   let updatedEx = null;
   library[dayId] = library[dayId].map((e) => {
     if (e.id !== exId) return e;
-    updatedEx = { ...e, weights: e.weights.map((w) => w + bump) };
+    if (e.trackType === "weight") {
+      const bump = PROGRESSION_BUMP[e.type] || PROGRESSION_BUMP.other;
+      updatedEx = { ...e, weights: e.weights.map((w) => w + bump) };
+    } else if (e.trackType === "time") {
+      updatedEx = { ...e, target: exTarget(e) + TIME_BUMP_SECONDS };
+    } else {
+      updatedEx = { ...e, target: exTarget(e) + BODYWEIGHT_REP_BUMP };
+    }
     return updatedEx;
   });
   saveLibrary(library);
-  if (updatedEx) upsertBank(updatedEx.name, updatedEx.type, updatedEx.weights);
+  if (updatedEx) upsertBank(updatedEx);
   render();
 }
 
@@ -577,14 +631,20 @@ function renderProgress() {
   select.onchange = (e) => { state.progressExId = e.target.value; render(); };
   wrap.appendChild(select);
 
+  const currentEx = exMap[state.progressExId];
+  const isWeighted = currentEx && currentEx.trackType === "weight";
+  const metricLabel = currentEx && currentEx.trackType === "time" ? "sec held" : isWeighted ? "lbs" : "reps";
+
   const points = [];
   Object.entries(logs).sort(([a], [b]) => (a < b ? -1 : 1)).forEach(([date, dayLog]) => {
     const entry = dayLog.entries?.[state.progressExId];
     if (entry) {
       const completed = entry.sets.filter((s) => s.reps != null);
       if (completed.length > 0) {
-        const maxW = Math.max(...entry.sets.map((s) => s.weight || 0));
-        points.push({ date: fmtDate(date), weight: maxW });
+        const value = isWeighted
+          ? Math.max(...entry.sets.map((s) => s.weight || 0))
+          : Math.max(...entry.sets.map((s) => s.reps || 0));
+        points.push({ date: fmtDate(date), weight: value });
       }
     }
   });
@@ -597,6 +657,7 @@ function renderProgress() {
   const chartWrap = el(`<div class="chart-wrap"></div>`);
   chartWrap.appendChild(renderLineChart(points));
   wrap.appendChild(chartWrap);
+  wrap.appendChild(el(`<div class="chart-metric-label">Tracking: ${metricLabel} (best set per session)</div>`));
 
   return wrap;
 }
@@ -724,9 +785,11 @@ function openImportModal() {
       const name = (item.name || "").trim();
       const day = item.day;
       const type = ["upper", "lower", "other"].includes(item.type) ? item.type : "other";
+      const trackType = ["weight", "bodyweight", "time"].includes(item.trackType) ? item.trackType : "weight";
       const weights = Array.isArray(item.weights) && item.weights.length === 3
         ? item.weights.map((w) => Number(w) || 0)
         : [20, 20, 20];
+      const target = trackType === "time" ? (Number(item.target) || DEFAULT_TARGET_SECONDS) : null;
 
       if (!name || !validDays.has(day)) { skipped++; return; }
       if (!library[day]) library[day] = [];
@@ -735,12 +798,14 @@ function openImportModal() {
       if (existing) {
         existing.weights = weights;
         existing.type = type;
+        existing.trackType = trackType;
+        existing.target = target;
         updated++;
       } else {
-        library[day].push({ id: slugify(name), name, type, weights });
+        library[day].push({ id: slugify(name), name, type, trackType, weights, target });
         added++;
       }
-      upsertBank(name, type, weights);
+      upsertBank({ name, type, trackType, weights, target });
     });
 
     saveLibrary(library);
@@ -777,19 +842,35 @@ function openAddExerciseModal() {
         <select id="ex-day"></select>
       </div>
       <div class="form-row">
-        <label>Progression type</label>
-        <select id="ex-type">
-          <option value="upper">Upper body (+5 lbs)</option>
-          <option value="lower">Lower body (+10 lbs)</option>
-          <option value="other">Other (+5 lbs)</option>
+        <label>How is this tracked?</label>
+        <select id="ex-track">
+          <option value="weight">Weight + Reps</option>
+          <option value="bodyweight">Bodyweight (reps only)</option>
+          <option value="time">Time held (seconds)</option>
         </select>
       </div>
-      <div class="form-row">
-        <label>Starting weight per set (lbs)</label>
-        <div class="weights-row">
-          <input type="number" id="w1" placeholder="Set 1" value="20" />
-          <input type="number" id="w2" placeholder="Set 2" value="20" />
-          <input type="number" id="w3" placeholder="Set 3" value="20" />
+      <div id="ex-weight-fields">
+        <div class="form-row">
+          <label>Progression type</label>
+          <select id="ex-type">
+            <option value="upper">Upper body (+5 lbs)</option>
+            <option value="lower">Lower body (+10 lbs)</option>
+            <option value="other">Other (+5 lbs)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Starting weight per set (lbs)</label>
+          <div class="weights-row">
+            <input type="number" id="w1" placeholder="Set 1" value="20" />
+            <input type="number" id="w2" placeholder="Set 2" value="20" />
+            <input type="number" id="w3" placeholder="Set 3" value="20" />
+          </div>
+        </div>
+      </div>
+      <div id="ex-time-fields" style="display:none">
+        <div class="form-row">
+          <label>Target hold time (seconds)</label>
+          <input type="number" id="ex-target-seconds" value="30" />
         </div>
       </div>
       <div class="modal-actions">
@@ -814,6 +895,18 @@ function openAddExerciseModal() {
   const w2Input = modal.querySelector("#w2");
   const w3Input = modal.querySelector("#w3");
   const bankSelect = modal.querySelector("#ex-bank");
+  const trackSelect = modal.querySelector("#ex-track");
+  const weightFields = modal.querySelector("#ex-weight-fields");
+  const timeFields = modal.querySelector("#ex-time-fields");
+  const targetSecondsInput = modal.querySelector("#ex-target-seconds");
+
+  function updateFieldVisibility() {
+    const t = trackSelect.value;
+    weightFields.style.display = t === "weight" ? "" : "none";
+    timeFields.style.display = t === "time" ? "" : "none";
+  }
+  trackSelect.onchange = updateFieldVisibility;
+  updateFieldVisibility();
 
   bankSelect.onchange = () => {
     const key = bankSelect.value;
@@ -822,10 +915,13 @@ function openAddExerciseModal() {
     if (!entry) return;
     nameInput.value = entry.name;
     typeSelect.value = entry.type;
+    trackSelect.value = entry.trackType || "weight";
+    updateFieldVisibility();
     const w = entry.weights || [20, 20, 20];
     w1Input.value = w[0] ?? 20;
     w2Input.value = w[1] ?? 20;
     w3Input.value = w[2] ?? 20;
+    if (entry.trackType === "time") targetSecondsInput.value = entry.target ?? 30;
   };
 
   overlay.appendChild(modal);
@@ -835,17 +931,19 @@ function openAddExerciseModal() {
     const name = nameInput.value.trim();
     if (!name) { nameInput.focus(); return; }
     const dayId = modal.querySelector("#ex-day").value;
+    const trackType = trackSelect.value;
     const type = typeSelect.value;
     const w1 = Number(w1Input.value) || 0;
     const w2 = Number(w2Input.value) || 0;
     const w3 = Number(w3Input.value) || 0;
     const weights = [w1, w2, w3];
+    const target = trackType === "time" ? (Number(targetSecondsInput.value) || DEFAULT_TARGET_SECONDS) : null;
 
-    const newEx = { id: slugify(name), name, type, weights };
+    const newEx = { id: slugify(name), name, type, trackType, weights, target };
     if (!library[dayId]) library[dayId] = [];
     library[dayId].push(newEx);
     saveLibrary(library);
-    upsertBank(name, type, weights);
+    upsertBank(newEx);
 
     state.selectedDayId = dayId;
     document.body.removeChild(overlay);

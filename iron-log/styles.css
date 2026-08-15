@@ -281,6 +281,12 @@ select {
   padding: 18px 8px;
   border: 1.5px solid var(--border);
 }
+.chart-metric-label {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+  margin-top: 8px;
+}
 
 .fab {
   position: fixed;

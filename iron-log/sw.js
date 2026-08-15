@@ -1,4 +1,4 @@
-const CACHE_NAME = "iron-log-v4";
+const CACHE_NAME = "iron-log-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -27,6 +27,12 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Never cache the sync API — it's always meant to hit the network live;
+  // app.js already falls back to the local copy if this fails.
+  if (event.request.url.includes("/api/data")) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

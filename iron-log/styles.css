@@ -38,6 +38,7 @@ body {
 }
 
 .header { margin-bottom: 16px; }
+.header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .header .title {
   font-family: 'Oswald', sans-serif;
   font-size: 27px;
@@ -46,6 +47,16 @@ body {
   color: var(--text);
 }
 .header .subtitle { font-size: 14px; color: var(--text-faint); margin-top: 2px; }
+.sync-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-faint);
+  white-space: nowrap;
+  padding-top: 4px;
+}
+.sync-badge.synced { color: var(--sage); }
+.sync-badge.syncing { color: var(--amber); }
+.sync-badge.offline { color: var(--text-faint); }
 
 .tabs {
   display: flex;

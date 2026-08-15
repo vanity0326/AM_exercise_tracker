@@ -34,6 +34,7 @@ function loadLibrary() {
 }
 function saveLibrary(lib) {
   localStorage.setItem(LS_LIB, JSON.stringify(lib));
+  schedulePush();
 }
 function loadLogs() {
   try {
@@ -45,6 +46,7 @@ function loadLogs() {
 }
 function saveLogs(logs) {
   localStorage.setItem(LS_LOGS, JSON.stringify(logs));
+  schedulePush();
 }
 
 // Exercise bank: every exercise ever added, shared across all day-types, keyed
@@ -60,6 +62,7 @@ function loadBank() {
 }
 function saveBank(bank) {
   localStorage.setItem(LS_BANK, JSON.stringify(bank));
+  schedulePush();
 }
 function bankKey(name) {
   return name.trim().toLowerCase();
@@ -69,6 +72,62 @@ function upsertBank(name, type, weights) {
   if (!key) return;
   bank[key] = { name: name.trim(), type, weights: [...weights] };
   saveBank(bank);
+}
+
+// ---------- Cross-device sync (Netlify Blobs via a serverless function) ----------
+// Local storage above stays the fast, offline-first source of truth for the
+// current screen. This layer keeps a shared remote copy in sync in the
+// background so the same data shows up on every device.
+const REMOTE_ENDPOINT = "/api/data";
+let pushTimer = null;
+let suppressPush = false; // true while applying a just-pulled remote copy, so we don't immediately push it back
+
+async function pullRemote(isInitial) {
+  try {
+    const res = await fetch(REMOTE_ENDPOINT, { cache: "no-store" });
+    if (!res.ok) throw new Error("pull failed: " + res.status);
+    const remote = await res.json();
+    if (remote && (remote.library || remote.logs || remote.bank)) {
+      suppressPush = true;
+      library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
+      logs = remote.logs || {};
+      bank = remote.bank || {};
+      localStorage.setItem(LS_LIB, JSON.stringify(library));
+      localStorage.setItem(LS_LOGS, JSON.stringify(logs));
+      localStorage.setItem(LS_BANK, JSON.stringify(bank));
+      suppressPush = false;
+      setSyncStatus("synced");
+      render();
+    } else if (isInitial) {
+      // Nothing saved remotely yet — seed it with whatever's on this device.
+      pushRemote();
+    } else {
+      setSyncStatus("synced");
+    }
+  } catch (e) {
+    setSyncStatus(navigator.onLine ? "error" : "offline");
+  }
+}
+
+function schedulePush() {
+  if (suppressPush) return;
+  setSyncStatus("syncing");
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushRemote, 1200);
+}
+
+async function pushRemote() {
+  try {
+    const res = await fetch(REMOTE_ENDPOINT, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ library, logs, bank }),
+    });
+    if (!res.ok) throw new Error("push failed: " + res.status);
+    setSyncStatus("synced");
+  } catch (e) {
+    setSyncStatus(navigator.onLine ? "error" : "offline");
+  }
 }
 
 // ---------- State ----------
@@ -121,17 +180,42 @@ function render() {
 }
 
 function renderOfflineBanner() {
-  const div = el(`<div class="offline-banner ${navigator.onLine ? "" : "show"}">Offline — changes save locally and stay on this device</div>`);
+  const div = el(`<div class="offline-banner ${navigator.onLine ? "" : "show"}" id="offlineBanner">Offline — changes save locally and stay on this device</div>`);
   return div;
 }
 
+const SYNC_LABELS = {
+  idle: { text: "● —", cls: "" },
+  syncing: { text: "● Syncing…", cls: "syncing" },
+  synced: { text: "● Synced", cls: "synced" },
+  offline: { text: "● Offline — saved locally", cls: "offline" },
+  error: { text: "● Sync error — saved locally", cls: "offline" },
+};
+let syncStatus = "idle";
+
 function renderHeader() {
+  const s = SYNC_LABELS[syncStatus];
   return el(`
     <div class="header">
-      <div class="title">IRON LOG</div>
-      <div class="subtitle">Block 2 · Systems Builder</div>
+      <div class="header-top">
+        <div>
+          <div class="title">IRON LOG</div>
+          <div class="subtitle">Block 2 · Systems Builder</div>
+        </div>
+        <div class="sync-badge ${s.cls}" id="syncBadge">${s.text}</div>
+      </div>
     </div>
   `);
+}
+
+function setSyncStatus(next) {
+  syncStatus = next;
+  const badge = document.getElementById("syncBadge");
+  if (badge) {
+    const s = SYNC_LABELS[next];
+    badge.textContent = s.text;
+    badge.className = `sync-badge ${s.cls}`;
+  }
 }
 
 function renderTabs() {
@@ -642,8 +726,14 @@ function openAddExerciseModal() {
 }
 
 // ---- Boot ----
-window.addEventListener("online", render);
-window.addEventListener("offline", render);
+window.addEventListener("online", () => {
+  render();
+  pullRemote(false);
+});
+window.addEventListener("offline", () => {
+  setSyncStatus("offline");
+  render();
+});
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -652,3 +742,9 @@ if ("serviceWorker" in navigator) {
 }
 
 render();
+if (navigator.onLine) {
+  setSyncStatus("syncing");
+  pullRemote(true);
+} else {
+  setSyncStatus("offline");
+}

@@ -1,4 +1,5 @@
 // ---------- Data ----------
+const APP_VERSION = "v7";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -22,6 +23,18 @@ const TARGET_REPS = 10;
 const LS_LIB = "iron-log-library";
 const LS_LOGS = "iron-log-logs";
 const LS_BANK = "iron-log-bank";
+const LS_LOCAL_UPDATED_AT = "iron-log-local-updated-at";
+
+// Stamped (synchronously, so it survives even an immediate page refresh)
+// every time this device writes data locally. Used to avoid a race where a
+// reload pulls a slightly-stale remote copy before this device's most recent
+// change has finished pushing up, which would otherwise silently overwrite it.
+function touchLocalUpdatedAt() {
+  localStorage.setItem(LS_LOCAL_UPDATED_AT, String(Date.now()));
+}
+function getLocalUpdatedAt() {
+  return Number(localStorage.getItem(LS_LOCAL_UPDATED_AT) || 0);
+}
 
 function loadLibrary() {
   try {
@@ -34,6 +47,7 @@ function loadLibrary() {
 }
 function saveLibrary(lib) {
   localStorage.setItem(LS_LIB, JSON.stringify(lib));
+  touchLocalUpdatedAt();
   schedulePush();
 }
 function loadLogs() {
@@ -46,6 +60,7 @@ function loadLogs() {
 }
 function saveLogs(logs) {
   localStorage.setItem(LS_LOGS, JSON.stringify(logs));
+  touchLocalUpdatedAt();
   schedulePush();
 }
 
@@ -62,6 +77,7 @@ function loadBank() {
 }
 function saveBank(bank) {
   localStorage.setItem(LS_BANK, JSON.stringify(bank));
+  touchLocalUpdatedAt();
   schedulePush();
 }
 function bankKey(name) {
@@ -88,6 +104,17 @@ async function pullRemote(isInitial) {
     if (!res.ok) throw new Error("pull failed: " + res.status);
     const remote = await res.json();
     if (remote && (remote.library || remote.logs || remote.bank)) {
+      // If this device wrote something locally more recently than the remote
+      // copy was saved, trust the local copy and push it up instead of
+      // clobbering a change that hasn't finished syncing yet (e.g. a quick
+      // refresh right after tapping something).
+      const remoteTime = remote.updatedAt ? Date.parse(remote.updatedAt) : 0;
+      const localTime = getLocalUpdatedAt();
+      if (localTime > remoteTime) {
+        setSyncStatus("syncing");
+        pushRemote();
+        return;
+      }
       suppressPush = true;
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
       logs = remote.logs || {};
@@ -201,7 +228,7 @@ function renderHeader() {
       <div class="header-top">
         <div>
           <div class="title">IRON LOG</div>
-          <div class="subtitle">Block 2 · Systems Builder</div>
+          <div class="subtitle">Block 2 · Systems Builder · ${APP_VERSION}</div>
         </div>
         <div class="sync-badge ${s.cls}" id="syncBadge">${s.text}</div>
       </div>

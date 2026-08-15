@@ -103,6 +103,7 @@ button.primary:hover{background:#0f6e56;border-color:#0f6e56}
 .lifting-section{margin-top:1.5rem}
 .sync-note{font-size:12px;color:var(--ink-3);margin-bottom:0.9rem;font-style:italic}
 .sync-note.synced{color:var(--accent);font-style:normal;font-weight:600}
+.sync-note.partial{color:#ba7517;font-style:normal;font-weight:600}
 .lifting-divider{border:none;border-top:2px solid var(--ink);margin-bottom:1.25rem}
 .lifting-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.25rem}
 .lifting-day-title{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.06em}
@@ -369,8 +370,14 @@ const DEFAULT_LOWER_EX = [
 // opens with your current exercises + latest progressed weights. Reps default
 // to a 10/10/8 pattern (editable, same as always) since Iron Log only tracks
 // weight targets, not per-set rep splits.
+//
+// This also pulls directly from the same shared Netlify store Iron Log syncs
+// to, rather than only trusting whatever's cached in this browser — so the
+// planner shows current data even on a device where Iron Log itself hasn't
+// been opened recently.
 
 const IRON_LOG_KEY = 'iron-log-library';
+const IRON_LOG_REMOTE = '/api/data';
 
 function loadIronLogLibrary() {
   try {
@@ -378,6 +385,23 @@ function loadIronLogLibrary() {
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
     return null;
+  }
+}
+
+async function refreshFromRemote() {
+  try {
+    const res = await fetch(IRON_LOG_REMOTE, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const remote = await res.json();
+    if (remote && remote.library) {
+      localStorage.setItem(IRON_LOG_KEY, JSON.stringify(remote.library));
+      if (remote.logs) localStorage.setItem('iron-log-logs', JSON.stringify(remote.logs));
+      if (remote.bank) localStorage.setItem('iron-log-bank', JSON.stringify(remote.bank));
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -390,14 +414,12 @@ function getLiftingData() {
   const lib = loadIronLogLibrary();
   const hasUpper = lib && Array.isArray(lib.upper) && lib.upper.length > 0;
   const hasLower = lib && Array.isArray(lib.lower) && lib.lower.length > 0;
-  if (hasUpper || hasLower) {
-    return {
-      upper: hasUpper ? lib.upper.map(exToRow) : DEFAULT_UPPER_EX,
-      lower: hasLower ? lib.lower.map(exToRow) : DEFAULT_LOWER_EX,
-      synced: true,
-    };
-  }
-  return { upper: DEFAULT_UPPER_EX, lower: DEFAULT_LOWER_EX, synced: false };
+  return {
+    upper: hasUpper ? lib.upper.map(exToRow) : DEFAULT_UPPER_EX,
+    lower: hasLower ? lib.lower.map(exToRow) : DEFAULT_LOWER_EX,
+    hasUpper,
+    hasLower,
+  };
 }
 
 // ── STATE ────────────────────────────────────────────────────────────────────
@@ -602,10 +624,22 @@ function buildLiftingTables() {
 
   var syncNote = document.getElementById('syncNote');
   if (syncNote) {
-    syncNote.textContent = data.synced
-      ? '✓ Synced from Iron Log — weights below are your current progressed numbers, edit freely for this week.'
-      : 'Using saved defaults — open Iron Log on this device at least once to sync live weights here.';
-    syncNote.className = 'sync-note' + (data.synced ? ' synced' : '');
+    var bothSynced = data.hasUpper && data.hasLower;
+    var noneSynced = !data.hasUpper && !data.hasLower;
+    var text, cls;
+    if (bothSynced) {
+      text = '✓ Synced from Iron Log — weights below are your current progressed numbers, edit freely for this week.';
+      cls = 'synced';
+    } else if (noneSynced) {
+      text = 'Using saved defaults for both tables — add exercises in Iron Log, then reopen this planner to sync live weights.';
+      cls = '';
+    } else {
+      var missing = data.hasUpper ? 'Lower' : 'Upper';
+      text = '⚠ Only partially synced — Upper/Lower table shows real Iron Log data, but ' + missing + ' is still showing saved defaults (no ' + missing.toLowerCase() + ' exercises found yet).';
+      cls = 'partial';
+    }
+    syncNote.textContent = text;
+    syncNote.className = 'sync-note' + (cls ? ' ' + cls : '');
   }
 }
 
@@ -650,8 +684,12 @@ DAYS.forEach(function(d){ sel[d.id] = {primary:'', levelup:'', commute:'walk-lun
 sel['sun'] = {primary:'swim', levelup:'', commute:'walk-lunch'};
 buildGrid();
 updateSummary();
-buildLiftingTables();
+buildLiftingTables(); // instant render from whatever's cached, then refresh below
 loadQuote();
+
+refreshFromRemote().then(function(updated) {
+  if (updated) buildLiftingTables(); // rebuild with the freshly-pulled data
+});
 
 </script>
 </body>

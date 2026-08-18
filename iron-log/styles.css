@@ -352,6 +352,23 @@ select {
 }
 .weights-row { display: flex; gap: 10px; }
 .weights-row input { flex: 1; }
+.check-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+.check-item input { width: 16px; height: 16px; accent-color: var(--primary); }
 .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
 .btn-primary, .btn-secondary {
   flex: 1;

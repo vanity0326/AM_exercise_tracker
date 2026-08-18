@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v11";
+const APP_VERSION = "v12";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -605,7 +605,7 @@ function renderHistory() {
     .reverse();
 
   const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
-  exportBtn.onclick = exportCSV;
+  exportBtn.onclick = openExportModal;
   wrap.appendChild(exportBtn);
 
   if (dates.length === 0) {
@@ -644,19 +644,92 @@ function renderHistory() {
   return wrap;
 }
 
+// ---- Export filters modal ----
+function openExportModal() {
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const exMap = allExercises();
+  const exList = Object.values(exMap).sort((a, b) => a.name.localeCompare(b.name));
+  const dates = Object.keys(logs).sort();
+  const earliest = dates[0] || todayISO();
+  const latest = dates[dates.length - 1] || todayISO();
+
+  const modal = el(`
+    <div class="modal">
+      <h3>Export CSV</h3>
+      <div class="form-row">
+        <label>Date range</label>
+        <div class="weights-row">
+          <input type="date" id="exp-from" value="${earliest}" />
+          <input type="date" id="exp-to" value="${latest}" />
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Day types to include</label>
+        <div id="exp-day-checks" class="check-grid"></div>
+      </div>
+      <div class="form-row">
+        <label>Exercise</label>
+        <select id="exp-exercise">
+          <option value="">All exercises</option>
+          ${exList.map((ex) => `<option value="${ex.id}">${ex.name}</option>`).join("")}
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="exp-cancel-btn">Cancel</button>
+        <button class="btn-primary" id="exp-go-btn">Export</button>
+      </div>
+    </div>
+  `);
+
+  const dayChecks = modal.querySelector("#exp-day-checks");
+  DAYS.forEach((d) => {
+    const chk = el(`
+      <label class="check-item">
+        <input type="checkbox" value="${d.id}" checked />
+        <span>${d.label}</span>
+      </label>
+    `);
+    dayChecks.appendChild(chk);
+  });
+
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+  modal.querySelector("#exp-cancel-btn").onclick = () => document.body.removeChild(overlay);
+  modal.querySelector("#exp-go-btn").onclick = () => {
+    const from = modal.querySelector("#exp-from").value || "0000-01-01";
+    const to = modal.querySelector("#exp-to").value || "9999-12-31";
+    const checkedDays = new Set(
+      [...dayChecks.querySelectorAll("input:checked")].map((c) => c.value)
+    );
+    const exerciseId = modal.querySelector("#exp-exercise").value || null;
+
+    const ok = exportCSV({ from, to, days: checkedDays, exerciseId });
+    if (ok) document.body.removeChild(overlay);
+  };
+
+  document.body.appendChild(overlay);
+}
+
 // ---- CSV export ----
 // Long-format: one row per exercise per day, matching the wide/columnar
 // style of the existing spreadsheet so it drops straight into a pivot table.
-function exportCSV() {
+// filters: { from, to, days: Set<dayId>, exerciseId } — all optional; called
+// with no args exports everything.
+function exportCSV(filters) {
+  const f = filters || {};
   const exMap = allExercises();
   const rows = [["Date", "Day Type", "Exercise", "Tracking", "Set1 Weight(lbs)", "Set1 Value", "Set2 Weight(lbs)", "Set2 Value", "Set3 Weight(lbs)", "Set3 Value", "Notes"]];
 
   Object.keys(logs).sort().forEach((date) => {
+    if (f.from && date < f.from) return;
+    if (f.to && date > f.to) return;
     const dayLog = logs[date];
+    if (f.days && !f.days.has(dayLog.dayId)) return;
     const dayLabel = DAYS.find((d) => d.id === dayLog.dayId)?.label || dayLog.dayId || "";
     const entries = dayLog.entries || {};
 
     Object.entries(entries).forEach(([exId, entry]) => {
+      if (f.exerciseId && exId !== f.exerciseId) return;
       const ex = exMap[exId];
       const name = ex ? ex.name : exId;
       const trackType = ex ? ex.trackType : "";
@@ -670,18 +743,20 @@ function exportCSV() {
       rows.push([date, dayLabel, name, trackType, ...cells, ""]);
     });
 
-    if (dayLog.note) {
+    if (dayLog.note && !f.exerciseId) {
       rows.push([date, dayLabel, "", "cardio-note", "", "", "", "", "", "", dayLog.note]);
     }
   });
 
   if (rows.length === 1) {
-    alert("Nothing logged yet — nothing to export.");
-    return;
+    alert("No logged sessions match those filters.");
+    return false;
   }
 
   const csv = rows.map((r) => r.map(csvEscapeCell).join(",")).join("\r\n");
-  downloadFile(csv, `iron-log-export-${todayISO()}.csv`, "text/csv;charset=utf-8;");
+  const rangeTag = f.from || f.to ? `_${f.from || "start"}_to_${f.to || "end"}` : "";
+  downloadFile(csv, `iron-log-export${rangeTag}-${todayISO()}.csv`, "text/csv;charset=utf-8;");
+  return true;
 }
 
 function csvEscapeCell(v) {

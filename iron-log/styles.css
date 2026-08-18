@@ -339,6 +339,7 @@ select {
 .modal h3 { font-family: 'Oswald', sans-serif; margin: 0 0 18px; font-size: 21px; color: var(--text); }
 .form-row { margin-bottom: 16px; }
 .form-row label { display: block; font-size: 14px; color: var(--text-dim); margin-bottom: 7px; font-weight: 600; }
+.field-hint { font-size: 12px; color: var(--text-faint); margin-top: 6px; }
 .form-row input[type="text"], .form-row select, .form-row input[type="number"] {
   width: 100%;
   background: var(--bg);
@@ -403,3 +404,34 @@ select {
 }
 .import-result.success { color: var(--sage); }
 .import-result.error { color: var(--danger); }
+
+.summary-btn {
+  width: 100%;
+  background: var(--primary-dim);
+  border: 1.5px solid var(--primary);
+  color: var(--primary);
+  border-radius: 12px;
+  padding: 13px 0;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.summary-row {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+}
+.summary-row:last-child { border-bottom: none; }
+.summary-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.summary-ex-name { font-weight: 700; font-size: 15px; color: var(--text); }
+.summary-status { font-size: 12px; font-weight: 700; color: var(--sage); white-space: nowrap; }
+.summary-row.complete .summary-ex-name { color: var(--sage); }
+.summary-sets { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+.summary-set.missing { color: var(--danger); font-style: italic; }
+.summary-sep { margin: 0 6px; color: var(--text-faint); }

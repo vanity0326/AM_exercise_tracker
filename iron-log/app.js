@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -34,26 +34,32 @@ const TRACK_TYPES = {
 function exUnitLabel(ex) {
   return ex.trackType === "time" ? "sec" : "reps";
 }
+function exNumSets(ex) {
+  const n = ex.numSets;
+  return Number.isInteger(n) && n >= 1 ? n : 3;
+}
 // Per-set targets are fully custom per exercise — no baked-in pattern.
-// ex.targets is always a [t1, t2, t3] array you set when adding the
-// exercise (defaults to a flat value, but you can make any set higher or
-// lower than the others, or all the same — whatever fits that movement).
+// ex.targets is a [t1, t2, ...] array (length = exNumSets(ex)) you set when
+// adding the exercise — any set can be higher or lower than the others, or
+// all the same, whatever fits that movement.
 function targetForSet(ex, setIndex) {
   if (Array.isArray(ex.targets) && ex.targets[setIndex] != null) return ex.targets[setIndex];
   // Fallback for exercises saved before per-set targets existed.
   if (ex.target != null) return ex.target;
   return ex.trackType === "time" ? DEFAULT_TARGET_SECONDS : DEFAULT_TARGET_REPS;
 }
-function defaultTargets(trackType) {
+function defaultTargets(trackType, n) {
   const base = trackType === "time" ? DEFAULT_TARGET_SECONDS : DEFAULT_TARGET_REPS;
-  return [base, base, base];
+  return Array.from({ length: n || 3 }, () => base);
 }
 function targetLabelFor(ex) {
-  const t1 = targetForSet(ex, 0), t2 = targetForSet(ex, 1), t3 = targetForSet(ex, 2);
+  const n = exNumSets(ex);
+  const vals = Array.from({ length: n }, (_, i) => targetForSet(ex, i));
   const suffix = ex.trackType === "time" ? "s" : "";
-  if (t1 === t2 && t2 === t3) return `${t1}${suffix} · all sets`;
-  return `${t1}${suffix} / ${t2}${suffix} / ${t3}${suffix}`;
+  if (vals.every((v) => v === vals[0])) return `${vals[0]}${suffix} · all ${n} set${n === 1 ? "" : "s"}`;
+  return vals.map((v) => `${v}${suffix}`).join(" / ");
 }
+
 
 // ---------- Storage ----------
 const LS_LIB = "iron-log-library";
@@ -405,30 +411,153 @@ function renderToday() {
   }
 
   const tabCursor = makeTabCursor();
-  dayExercises.forEach((ex) => {
-    const entry = todayLog.entries?.[ex.id];
-    const sets = entry?.sets || defaultSets(ex);
-    wrap.appendChild(renderExerciseCard(ex, sets, tabCursor.next(), current.id));
+  const plan = buildRenderPlan(dayExercises);
+  plan.forEach((item) => {
+    if (item.type === "solo") {
+      const ex = item.ex;
+      const entry = todayLog.entries?.[ex.id];
+      const sets = entry?.sets || defaultSets(ex);
+      const blockSize = sets.length * (ex.trackType === "weight" ? 2 : 1);
+      wrap.appendChild(renderExerciseCard(ex, sets, tabCursor.next(blockSize), current.id));
+    } else {
+      wrap.appendChild(renderCircuitCard(item.exercises, item.groupId, tabCursor, todayLog, current.id));
+    }
   });
 
+  const actionRow = el(`<div class="log-action-row"></div>`);
   const summaryBtn = el(`<button class="summary-btn">✓ View Workout Summary</button>`);
   summaryBtn.onclick = () => openWorkoutSummaryModal(current.id);
-  wrap.appendChild(summaryBtn);
+  actionRow.appendChild(summaryBtn);
+
+  if (dayExercises.filter((e) => !e.groupId).length >= 2) {
+    const groupBtn = el(`<button class="group-btn">🔗 Group into Circuit</button>`);
+    groupBtn.onclick = () => openGroupModal(current.id);
+    actionRow.appendChild(groupBtn);
+  }
+  wrap.appendChild(actionRow);
 
   return wrap;
 }
 
-function defaultSets(ex) {
-  if (ex.trackType === "weight") return ex.weights.map((w) => ({ weight: w, reps: null }));
-  return [{ weight: null, reps: null }, { weight: null, reps: null }, { weight: null, reps: null }];
+// Groups exercises sharing a groupId into one combined "circuit" render item,
+// preserving first-appearance order; everything else renders solo as before.
+function buildRenderPlan(dayExercises) {
+  const plan = [];
+  const seen = new Set();
+  dayExercises.forEach((ex) => {
+    if (seen.has(ex.id)) return;
+    if (ex.groupId) {
+      const members = dayExercises.filter((e) => e.groupId === ex.groupId);
+      members.forEach((m) => seen.add(m.id));
+      plan.push({ type: "circuit", groupId: ex.groupId, exercises: members });
+    } else {
+      seen.add(ex.id);
+      plan.push({ type: "solo", ex });
+    }
+  });
+  return plan;
 }
 
-// Hands out sequential tabindex blocks of 6 (3 weight inputs + 3 reps inputs)
-// per exercise card, so Tab moves lbs → lbs → lbs → reps → reps → reps within
-// a card, then on to the next card's lbs.
+// One combined card containing each member's full exercise card (name,
+// plate-stack, sets, progression) — visually grouped and clearly labeled so
+// you know to do them back-to-back, while every exercise still logs its own
+// sets exactly as it does standalone. Supports any number of members, not
+// just pairs.
+function renderCircuitCard(members, groupId, tabCursor, todayLog, dayId) {
+  const wrapper = el(`
+    <div class="circuit-card">
+      <div class="circuit-header">
+        <span class="circuit-label">🔗 Circuit · ${members.length} exercises</span>
+        <button class="circuit-ungroup-btn">Ungroup</button>
+      </div>
+    </div>
+  `);
+  members.forEach((ex) => {
+    const entry = todayLog.entries?.[ex.id];
+    const sets = entry?.sets || defaultSets(ex);
+    const blockSize = sets.length * (ex.trackType === "weight" ? 2 : 1);
+    wrapper.appendChild(renderExerciseCard(ex, sets, tabCursor.next(blockSize), dayId));
+  });
+  wrapper.querySelector(".circuit-ungroup-btn").onclick = () => ungroupCircuit(dayId, groupId);
+  return wrapper;
+}
+
+function ungroupCircuit(dayId, groupId) {
+  if (!confirm("Ungroup this circuit? The exercises stay — they just won't be linked together anymore.")) return;
+  (library[dayId] || []).forEach((e) => { if (e.groupId === groupId) delete e.groupId; });
+  saveLibrary(library);
+  render();
+}
+
+function generateGroupId() {
+  return "grp_" + Math.random().toString(36).slice(2, 8);
+}
+
+function openGroupModal(dayId) {
+  const dayExercises = library[dayId] || [];
+  const ungrouped = dayExercises.filter((e) => !e.groupId);
+  if (ungrouped.length < 2) {
+    alert("You need at least 2 ungrouped exercises on this day to make a circuit.");
+    return;
+  }
+
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`
+    <div class="modal">
+      <h3>Group into Circuit</h3>
+      <div class="field-hint" style="margin-bottom:14px;">Pick 2 or more exercises to do back-to-back as one circuit. Add more members later, or ungroup anytime — nothing is permanent.</div>
+      <div id="group-check-list" class="check-grid one-col"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="group-cancel-btn">Cancel</button>
+        <button class="btn-primary" id="group-save-btn">Create Circuit</button>
+      </div>
+    </div>
+  `);
+  const list = modal.querySelector("#group-check-list");
+  ungrouped.forEach((ex) => {
+    list.appendChild(el(`
+      <label class="check-item">
+        <input type="checkbox" value="${ex.id}" />
+        <span>${ex.name}</span>
+      </label>
+    `));
+  });
+
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+  modal.querySelector("#group-cancel-btn").onclick = () => document.body.removeChild(overlay);
+  modal.querySelector("#group-save-btn").onclick = () => {
+    const selected = [...list.querySelectorAll("input:checked")].map((c) => c.value);
+    if (selected.length < 2) {
+      alert("Pick at least 2 exercises.");
+      return;
+    }
+    const groupId = generateGroupId();
+    (library[dayId] || []).forEach((e) => { if (selected.includes(e.id)) e.groupId = groupId; });
+    saveLibrary(library);
+    document.body.removeChild(overlay);
+    render();
+  };
+
+  document.body.appendChild(overlay);
+}
+
+function defaultSets(ex) {
+  const n = exNumSets(ex);
+  if (ex.trackType === "weight") return ex.weights.slice(0, n).map((w) => ({ weight: w, reps: null }));
+  return Array.from({ length: n }, () => ({ weight: null, reps: null }));
+}
+
+// Hands out sequential tabindex blocks (one weight + one reps input per set,
+// weight-tracked exercises only need the reps block for bodyweight/time) so
+// Tab moves lbs → lbs → lbs → reps → reps → reps within a card, then on to
+// the next card's lbs. Block size adapts to however many sets this exercise
+// actually has.
 function makeTabCursor() {
   let n = 1;
-  return { next: () => { const start = n; n += 6; return start; } };
+  return {
+    next: (blockSize) => { const start = n; n += blockSize; return start; },
+  };
 }
 
 function renderExerciseCard(ex, sets, tabStart, dayId) {
@@ -456,12 +585,13 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   card.appendChild(top);
 
   const isWeighted = ex.trackType === "weight";
+  const n = sets.length;
   const setRow = el(`<div class="set-row"></div>`);
   sets.forEach((s, i) => {
     const col = el(`
       <div class="set-col">
         ${isWeighted ? `<label>lbs</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${unit === "sec" ? "hold" : "BW"}</label>`}
-        <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + 3 + i : tabStart + i}" />
+        <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + n + i : tabStart + i}" />
       </div>
     `);
     const inputs = col.querySelectorAll("input");
@@ -554,6 +684,11 @@ function removeExerciseFromDay(dayId, exId) {
   const ok = confirm(`Remove ${ex ? ex.name : "this exercise"} from ${dayLabel}? Past logged history for it stays in History.`);
   if (!ok) return;
   library[dayId] = (library[dayId] || []).filter((e) => e.id !== exId);
+  // A "circuit" of one doesn't mean anything — auto-ungroup any group left with a single member.
+  if (ex && ex.groupId) {
+    const remaining = library[dayId].filter((e) => e.groupId === ex.groupId);
+    if (remaining.length === 1) delete remaining[0].groupId;
+  }
   saveLibrary(library);
   render();
 }
@@ -587,10 +722,10 @@ function applyProgression(exId) {
       const bump = PROGRESSION_BUMP[e.type] || PROGRESSION_BUMP.other;
       updatedEx = { ...e, weights: e.weights.map((w) => w + bump) };
     } else if (e.trackType === "time") {
-      const targets = [0, 1, 2].map((i) => targetForSet(e, i) + TIME_BUMP_SECONDS);
+      const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + TIME_BUMP_SECONDS);
       updatedEx = { ...e, targets };
     } else {
-      const targets = [0, 1, 2].map((i) => targetForSet(e, i) + BODYWEIGHT_REP_BUMP);
+      const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + BODYWEIGHT_REP_BUMP);
       updatedEx = { ...e, targets };
     }
     return updatedEx;
@@ -722,7 +857,9 @@ function openExportModal() {
 function exportCSV(filters) {
   const f = filters || {};
   const exMap = allExercises();
-  const rows = [["Date", "Day Type", "Exercise", "Tracking", "Set1 Weight(lbs)", "Set1 Value", "Set2 Weight(lbs)", "Set2 Value", "Set3 Weight(lbs)", "Set3 Value", "Notes"]];
+  // Long format: one row per set. Handles any number of sets per exercise
+  // without needing fixed Set1/2/3 columns.
+  const rows = [["Date", "Day Type", "Exercise", "Tracking", "Set Number", "Weight(lbs)", "Value", "Notes"]];
 
   Object.keys(logs).sort().forEach((date) => {
     if (f.from && date < f.from) return;
@@ -738,17 +875,22 @@ function exportCSV(filters) {
       const name = ex ? ex.name : exId;
       const trackType = ex ? ex.trackType : "";
       const sets = entry.sets || [];
-      const cells = [];
-      for (let i = 0; i < 3; i++) {
-        const s = sets[i] || {};
-        cells.push(trackType === "weight" ? (s.weight ?? "") : "");
-        cells.push(s.reps ?? "");
-      }
-      rows.push([date, dayLabel, name, trackType, ...cells, ""]);
+      sets.forEach((s, i) => {
+        rows.push([
+          date,
+          dayLabel,
+          name,
+          trackType,
+          i + 1,
+          trackType === "weight" ? (s.weight ?? "") : "",
+          s.reps ?? "",
+          "",
+        ]);
+      });
     });
 
     if (dayLog.note && !f.exerciseId) {
-      rows.push([date, dayLabel, "", "cardio-note", "", "", "", "", "", "", dayLog.note]);
+      rows.push([date, dayLabel, "", "cardio-note", "", "", "", dayLog.note]);
     }
   });
 
@@ -1064,12 +1206,15 @@ function openImportModal() {
       const day = item.day;
       const type = ["upper", "lower", "other"].includes(item.type) ? item.type : "other";
       const trackType = ["weight", "bodyweight", "time"].includes(item.trackType) ? item.trackType : "weight";
-      const weights = Array.isArray(item.weights) && item.weights.length === 3
+      const weights = Array.isArray(item.weights) && item.weights.length >= 1
         ? item.weights.map((w) => Number(w) || 0)
         : [20, 20, 20];
-      const targets = Array.isArray(item.targets) && item.targets.length === 3
+      const numSets = Array.isArray(item.targets) && item.targets.length >= 1
+        ? item.targets.length
+        : weights.length;
+      const targets = Array.isArray(item.targets) && item.targets.length >= 1
         ? item.targets.map((t) => Number(t) || 0)
-        : defaultTargets(trackType);
+        : defaultTargets(trackType, numSets);
 
       if (!name || !validDays.has(day)) { skipped++; return; }
       if (!library[day]) library[day] = [];
@@ -1080,9 +1225,10 @@ function openImportModal() {
         existing.type = type;
         existing.trackType = trackType;
         existing.targets = targets;
+        existing.numSets = numSets;
         updated++;
       } else {
-        library[day].push({ id: slugify(name), name, type, trackType, weights, targets });
+        library[day].push({ id: slugify(name), name, type, trackType, numSets, weights, targets });
         added++;
       }
       upsertBank({ name, type, trackType, weights, targets });
@@ -1100,6 +1246,23 @@ function openImportModal() {
 }
 
 // ---- Add Exercise modal ----
+// Shared helpers for the dynamic "N sets" weight/target input rows used by
+// both Add and Edit exercise modals.
+function setNumberRow(container, count, values) {
+  container.innerHTML = "";
+  for (let i = 0; i < count; i++) {
+    const val = values && values[i] != null ? values[i] : "";
+    const input = document.createElement("input");
+    input.type = "number";
+    input.placeholder = `Set ${i + 1}`;
+    input.value = val;
+    container.appendChild(input);
+  }
+}
+function readNumberRow(container) {
+  return Array.from(container.querySelectorAll("input")).map((i) => Number(i.value) || 0);
+}
+
 function openAddExerciseModal() {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const bankEntries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
@@ -1129,6 +1292,10 @@ function openAddExerciseModal() {
           <option value="time">Time held (seconds)</option>
         </select>
       </div>
+      <div class="form-row">
+        <label>Number of sets</label>
+        <input type="number" id="ex-num-sets" min="1" value="3" style="width:80px" />
+      </div>
       <div id="ex-weight-fields">
         <div class="form-row">
           <label>Progression type</label>
@@ -1140,20 +1307,12 @@ function openAddExerciseModal() {
         </div>
         <div class="form-row">
           <label>Starting weight per set (lbs)</label>
-          <div class="weights-row">
-            <input type="number" id="w1" placeholder="Set 1" value="20" />
-            <input type="number" id="w2" placeholder="Set 2" value="20" />
-            <input type="number" id="w3" placeholder="Set 3" value="20" />
-          </div>
+          <div class="weights-row" id="ex-weights-row"></div>
         </div>
       </div>
       <div class="form-row">
         <label id="ex-targets-label">Target reps per set</label>
-        <div class="weights-row">
-          <input type="number" id="t1" placeholder="Set 1" value="10" />
-          <input type="number" id="t2" placeholder="Set 2" value="10" />
-          <input type="number" id="t3" placeholder="Set 3" value="10" />
-        </div>
+        <div class="weights-row" id="ex-targets-row"></div>
         <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
       </div>
       <div class="modal-actions">
@@ -1174,35 +1333,46 @@ function openAddExerciseModal() {
   else typeSelect.value = "other";
 
   const nameInput = modal.querySelector("#ex-name");
-  const w1Input = modal.querySelector("#w1");
-  const w2Input = modal.querySelector("#w2");
-  const w3Input = modal.querySelector("#w3");
-  const t1Input = modal.querySelector("#t1");
-  const t2Input = modal.querySelector("#t2");
-  const t3Input = modal.querySelector("#t3");
+  const numSetsInput = modal.querySelector("#ex-num-sets");
+  const weightsRow = modal.querySelector("#ex-weights-row");
+  const targetsRow = modal.querySelector("#ex-targets-row");
   const targetsLabel = modal.querySelector("#ex-targets-label");
   const bankSelect = modal.querySelector("#ex-bank");
   const trackSelect = modal.querySelector("#ex-track");
   const weightFields = modal.querySelector("#ex-weight-fields");
-
-  function setTargetInputs(trackType, targets) {
-    const t = targets || defaultTargets(trackType);
-    t1Input.value = t[0];
-    t2Input.value = t[1];
-    t3Input.value = t[2];
-  }
 
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
     targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : "Target reps per set";
   }
+
+  function rebuildRows(count, weightVals, targetVals) {
+    setNumberRow(weightsRow, count, weightVals);
+    setNumberRow(targetsRow, count, targetVals);
+  }
+
+  numSetsInput.onchange = () => {
+    const n = Math.max(1, Number(numSetsInput.value) || 1);
+    numSetsInput.value = n;
+    const prevW = readNumberRow(weightsRow);
+    const prevT = readNumberRow(targetsRow);
+    const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
+    const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : 10);
+    rebuildRows(
+      n,
+      Array.from({ length: n }, (_, i) => (prevW[i] != null ? prevW[i] : lastW)),
+      Array.from({ length: n }, (_, i) => (prevT[i] != null ? prevT[i] : lastT))
+    );
+  };
   trackSelect.onchange = () => {
     updateFieldVisibility();
-    setTargetInputs(trackSelect.value, null); // reset to sensible defaults when switching type
+    const n = Math.max(1, Number(numSetsInput.value) || 3);
+    setNumberRow(targetsRow, n, defaultTargets(trackSelect.value, n));
   };
+
   updateFieldVisibility();
-  setTargetInputs("weight", null);
+  rebuildRows(3, [20, 20, 20], defaultTargets("weight", 3));
 
   bankSelect.onchange = () => {
     const key = bankSelect.value;
@@ -1213,11 +1383,9 @@ function openAddExerciseModal() {
     typeSelect.value = entry.type;
     trackSelect.value = entry.trackType || "weight";
     updateFieldVisibility();
-    const w = entry.weights || [20, 20, 20];
-    w1Input.value = w[0] ?? 20;
-    w2Input.value = w[1] ?? 20;
-    w3Input.value = w[2] ?? 20;
-    setTargetInputs(entry.trackType || "weight", entry.targets);
+    const n = (entry.targets && entry.targets.length) || (entry.weights && entry.weights.length) || 3;
+    numSetsInput.value = n;
+    rebuildRows(n, entry.weights || Array(n).fill(20), entry.targets || defaultTargets(entry.trackType || "weight", n));
   };
 
   overlay.appendChild(modal);
@@ -1229,13 +1397,11 @@ function openAddExerciseModal() {
     const dayId = modal.querySelector("#ex-day").value;
     const trackType = trackSelect.value;
     const type = typeSelect.value;
-    const w1 = Number(w1Input.value) || 0;
-    const w2 = Number(w2Input.value) || 0;
-    const w3 = Number(w3Input.value) || 0;
-    const weights = [w1, w2, w3];
-    const targets = [Number(t1Input.value) || 1, Number(t2Input.value) || 1, Number(t3Input.value) || 1];
+    const numSets = Math.max(1, Number(numSetsInput.value) || 1);
+    const weights = readNumberRow(weightsRow);
+    const targets = readNumberRow(targetsRow).map((t) => Math.max(t, 1));
 
-    const newEx = { id: slugify(name), name, type, trackType, weights, targets };
+    const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets };
     if (!library[dayId]) library[dayId] = [];
     library[dayId].push(newEx);
     saveLibrary(library);
@@ -1274,6 +1440,10 @@ function openEditExerciseModal(dayId, exId) {
           <option value="time">Time held (seconds)</option>
         </select>
       </div>
+      <div class="form-row">
+        <label>Number of sets</label>
+        <input type="number" id="edit-num-sets" min="1" style="width:80px" />
+      </div>
       <div id="edit-weight-fields">
         <div class="form-row">
           <label>Progression type</label>
@@ -1285,20 +1455,12 @@ function openEditExerciseModal(dayId, exId) {
         </div>
         <div class="form-row">
           <label>Current weight per set (lbs)</label>
-          <div class="weights-row">
-            <input type="number" id="edit-w1" />
-            <input type="number" id="edit-w2" />
-            <input type="number" id="edit-w3" />
-          </div>
+          <div class="weights-row" id="edit-weights-row"></div>
         </div>
       </div>
       <div class="form-row">
         <label id="edit-targets-label">Target reps per set</label>
-        <div class="weights-row">
-          <input type="number" id="edit-t1" />
-          <input type="number" id="edit-t2" />
-          <input type="number" id="edit-t3" />
-        </div>
+        <div class="weights-row" id="edit-targets-row"></div>
         <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
       </div>
       <div class="modal-actions">
@@ -1311,22 +1473,19 @@ function openEditExerciseModal(dayId, exId) {
   const nameInput = modal.querySelector("#edit-name");
   const trackSelect = modal.querySelector("#edit-track");
   const typeSelect = modal.querySelector("#edit-type");
+  const numSetsInput = modal.querySelector("#edit-num-sets");
   const weightFields = modal.querySelector("#edit-weight-fields");
   const targetsLabel = modal.querySelector("#edit-targets-label");
-  const w1Input = modal.querySelector("#edit-w1");
-  const w2Input = modal.querySelector("#edit-w2");
-  const w3Input = modal.querySelector("#edit-w3");
-  const t1Input = modal.querySelector("#edit-t1");
-  const t2Input = modal.querySelector("#edit-t2");
-  const t3Input = modal.querySelector("#edit-t3");
+  const weightsRow = modal.querySelector("#edit-weights-row");
+  const targetsRow = modal.querySelector("#edit-targets-row");
 
   trackSelect.value = ex.trackType || "weight";
   typeSelect.value = ex.type || "other";
-  const w = ex.weights || [20, 20, 20];
-  w1Input.value = w[0]; w2Input.value = w[1]; w3Input.value = w[2];
-  t1Input.value = targetForSet(ex, 0);
-  t2Input.value = targetForSet(ex, 1);
-  t3Input.value = targetForSet(ex, 2);
+  const n0 = exNumSets(ex);
+  numSetsInput.value = n0;
+  const w0 = ex.weights && ex.weights.length ? ex.weights : Array(n0).fill(20);
+  setNumberRow(weightsRow, n0, w0);
+  setNumberRow(targetsRow, n0, Array.from({ length: n0 }, (_, i) => targetForSet(ex, i)));
 
   function updateFieldVisibility() {
     const t = trackSelect.value;
@@ -1336,6 +1495,17 @@ function openEditExerciseModal(dayId, exId) {
   trackSelect.onchange = updateFieldVisibility;
   updateFieldVisibility();
 
+  numSetsInput.onchange = () => {
+    const n = Math.max(1, Number(numSetsInput.value) || 1);
+    numSetsInput.value = n;
+    const prevW = readNumberRow(weightsRow);
+    const prevT = readNumberRow(targetsRow);
+    const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
+    const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : 10);
+    setNumberRow(weightsRow, n, Array.from({ length: n }, (_, i) => (prevW[i] != null ? prevW[i] : lastW)));
+    setNumberRow(targetsRow, n, Array.from({ length: n }, (_, i) => (prevT[i] != null ? prevT[i] : lastT)));
+  };
+
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
   modal.querySelector("#edit-cancel-btn").onclick = () => document.body.removeChild(overlay);
@@ -1344,10 +1514,11 @@ function openEditExerciseModal(dayId, exId) {
     if (!name) { nameInput.focus(); return; }
     const trackType = trackSelect.value;
     const type = typeSelect.value;
-    const weights = [Number(w1Input.value) || 0, Number(w2Input.value) || 0, Number(w3Input.value) || 0];
-    const targets = [Number(t1Input.value) || 1, Number(t2Input.value) || 1, Number(t3Input.value) || 1];
+    const numSets = Math.max(1, Number(numSetsInput.value) || 1);
+    const weights = readNumberRow(weightsRow);
+    const targets = readNumberRow(targetsRow).map((t) => Math.max(t, 1));
 
-    Object.assign(ex, { name, trackType, type, weights, targets });
+    Object.assign(ex, { name, trackType, type, numSets, weights, targets });
     saveLibrary(library);
     upsertBank(ex);
 

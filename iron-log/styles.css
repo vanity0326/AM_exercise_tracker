@@ -207,8 +207,8 @@ body {
   50% { box-shadow: 0 0 0 9px rgba(184,114,12,0); }
 }
 
-.set-row { display: flex; gap: 10px; }
-.set-col { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.set-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.set-col { flex: 1; min-width: 62px; display: flex; flex-direction: column; gap: 5px; }
 .set-col label { font-size: 12px; color: var(--text-faint); text-align: center; font-weight: 600; }
 .set-col input {
   width: 100%;
@@ -358,8 +358,8 @@ select {
   font-size: 16px;
   font-family: 'Inter', sans-serif;
 }
-.weights-row { display: flex; gap: 10px; }
-.weights-row input { flex: 1; }
+.weights-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.weights-row input { flex: 1; min-width: 60px; }
 .check-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -442,6 +442,52 @@ select {
   cursor: pointer;
   margin-top: 4px;
 }
+.log-action-row { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.group-btn {
+  width: 100%;
+  background: transparent;
+  border: 1.5px dashed var(--primary);
+  color: var(--primary);
+  border-radius: 12px;
+  padding: 12px 0;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.circuit-card {
+  border: 2px solid var(--primary);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 14px;
+  background: var(--primary-dim);
+}
+.circuit-card .ex-card { margin-bottom: 10px; }
+.circuit-card .ex-card:last-of-type { margin-bottom: 12px; }
+.circuit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.circuit-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.circuit-ungroup-btn {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.check-grid.one-col { grid-template-columns: 1fr; }
 .summary-row {
   border-bottom: 1px solid var(--border);
   padding: 12px 0;

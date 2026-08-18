@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v12";
+const APP_VERSION = "v13";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -777,6 +777,47 @@ function downloadFile(content, filename, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ---- One-time data migration ----
+// Program officially started 2026-08-17. This silently purges anything
+// logged before that, plus any log entries pointing at exercise IDs that no
+// longer exist anywhere in the current library (leftover debris from the
+// sync-race incident before v7). Runs once automatically on load, guarded by
+// a flag so it never runs again — no permanent button, no ongoing UI. Safe
+// to leave in: if there's nothing to clean (e.g. on a second device after
+// the first already cleaned the shared store), it's a silent no-op.
+const CLEANUP_FLOOR_DATE = "2026-08-17";
+const CLEANUP_FLAG_KEY = "iron-log-cleanup-v13-done";
+
+function runOneTimeCleanupIfNeeded() {
+  if (localStorage.getItem(CLEANUP_FLAG_KEY)) return;
+
+  const exMap = allExercises();
+  const datesToRemove = Object.keys(logs).filter((d) => d < CLEANUP_FLOOR_DATE);
+  let orphanedCount = 0;
+
+  Object.keys(logs).forEach((date) => {
+    if (date < CLEANUP_FLOOR_DATE) return; // whole date already counted above
+    const entries = logs[date].entries || {};
+    Object.keys(entries).forEach((exId) => {
+      if (!exMap[exId]) orphanedCount++;
+    });
+  });
+
+  if (datesToRemove.length > 0 || orphanedCount > 0) {
+    datesToRemove.forEach((d) => delete logs[d]);
+    Object.keys(logs).forEach((date) => {
+      const entries = logs[date].entries || {};
+      Object.keys(entries).forEach((exId) => {
+        if (!exMap[exId]) delete entries[exId];
+      });
+    });
+    saveLogs(logs);
+    console.log(`Iron Log: one-time cleanup removed ${datesToRemove.length} old day(s) and ${orphanedCount} orphaned entr${orphanedCount === 1 ? "y" : "ies"}.`);
+  }
+
+  localStorage.setItem(CLEANUP_FLAG_KEY, "1");
+}
+
 // ---- Progress tab ----
 function renderProgress() {
   const wrap = document.createElement("div");
@@ -1224,7 +1265,8 @@ if ("serviceWorker" in navigator) {
 render();
 if (navigator.onLine) {
   setSyncStatus("syncing");
-  pullRemote(true);
+  pullRemote(true).then(() => runOneTimeCleanupIfNeeded());
 } else {
   setSyncStatus("offline");
+  runOneTimeCleanupIfNeeded();
 }

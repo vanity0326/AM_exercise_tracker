@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v10";
+const APP_VERSION = "v11";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -599,7 +599,14 @@ function applyProgression(exId) {
 // ---- History tab ----
 function renderHistory() {
   const wrap = document.createElement("div");
-  const dates = Object.keys(logs).filter((d) => Object.keys(logs[d].entries || {}).length > 0).sort().reverse();
+  const dates = Object.keys(logs)
+    .filter((d) => Object.keys(logs[d].entries || {}).length > 0 || !!logs[d].note)
+    .sort()
+    .reverse();
+
+  const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
+  exportBtn.onclick = exportCSV;
+  wrap.appendChild(exportBtn);
 
   if (dates.length === 0) {
     wrap.appendChild(el(`<div class="empty-state">No sessions logged yet.</div>`));
@@ -618,16 +625,81 @@ function renderHistory() {
         </div>
       </div>
     `);
-    Object.entries(dayLog.entries).forEach(([exId, entry]) => {
+    Object.entries(dayLog.entries || {}).forEach(([exId, entry]) => {
       const ex = exMap[exId];
       if (!ex) return;
-      const line = el(`<div class="hist-line"><b>${ex.name}:</b> ${entry.sets.map((s) => `${s.weight}×${s.reps ?? "–"}`).join(", ")}</div>`);
-      card.appendChild(line);
+      const unit = exUnitLabel(ex);
+      const setStr = entry.sets.map((s) => {
+        if (s.reps == null) return "–";
+        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${s.reps}${unit === "sec" ? "s" : " reps"}`;
+      }).join(", ");
+      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}</div>`));
     });
+    if (dayLog.note) {
+      card.appendChild(el(`<div class="hist-line"><b>Notes:</b> ${dayLog.note}</div>`));
+    }
     wrap.appendChild(card);
   });
 
   return wrap;
+}
+
+// ---- CSV export ----
+// Long-format: one row per exercise per day, matching the wide/columnar
+// style of the existing spreadsheet so it drops straight into a pivot table.
+function exportCSV() {
+  const exMap = allExercises();
+  const rows = [["Date", "Day Type", "Exercise", "Tracking", "Set1 Weight(lbs)", "Set1 Value", "Set2 Weight(lbs)", "Set2 Value", "Set3 Weight(lbs)", "Set3 Value", "Notes"]];
+
+  Object.keys(logs).sort().forEach((date) => {
+    const dayLog = logs[date];
+    const dayLabel = DAYS.find((d) => d.id === dayLog.dayId)?.label || dayLog.dayId || "";
+    const entries = dayLog.entries || {};
+
+    Object.entries(entries).forEach(([exId, entry]) => {
+      const ex = exMap[exId];
+      const name = ex ? ex.name : exId;
+      const trackType = ex ? ex.trackType : "";
+      const sets = entry.sets || [];
+      const cells = [];
+      for (let i = 0; i < 3; i++) {
+        const s = sets[i] || {};
+        cells.push(trackType === "weight" ? (s.weight ?? "") : "");
+        cells.push(s.reps ?? "");
+      }
+      rows.push([date, dayLabel, name, trackType, ...cells, ""]);
+    });
+
+    if (dayLog.note) {
+      rows.push([date, dayLabel, "", "cardio-note", "", "", "", "", "", "", dayLog.note]);
+    }
+  });
+
+  if (rows.length === 1) {
+    alert("Nothing logged yet — nothing to export.");
+    return;
+  }
+
+  const csv = rows.map((r) => r.map(csvEscapeCell).join(",")).join("\r\n");
+  downloadFile(csv, `iron-log-export-${todayISO()}.csv`, "text/csv;charset=utf-8;");
+}
+
+function csvEscapeCell(v) {
+  const s = String(v ?? "");
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function downloadFile(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ---- Progress tab ----

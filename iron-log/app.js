@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -444,10 +444,14 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
         <div class="ex-target">Target ${targetLabel}</div>
       </div>
       <div class="plate-stack"></div>
-      <button class="ex-delete-btn" title="Remove exercise">✕</button>
+      <div class="ex-card-actions">
+        <button class="ex-edit-btn" title="Edit targets/weights">✎</button>
+        <button class="ex-delete-btn" title="Remove exercise">✕</button>
+      </div>
     </div>
   `);
   top.querySelector(".plate-stack").appendChild(buildPlates(sets, ex));
+  top.querySelector(".ex-edit-btn").onclick = () => openEditExerciseModal(dayId, ex.id);
   top.querySelector(".ex-delete-btn").onclick = () => removeExerciseFromDay(dayId, ex.id);
   card.appendChild(top);
 
@@ -1238,6 +1242,115 @@ function openAddExerciseModal() {
     upsertBank(newEx);
 
     state.selectedDayId = dayId;
+    document.body.removeChild(overlay);
+    render();
+  };
+
+  document.body.appendChild(overlay);
+  nameInput.focus();
+}
+
+// ---- Edit Exercise modal ----
+// Lets you adjust an existing exercise's name, weights, and per-set targets
+// in place — same fields as Add Exercise, minus the bank picker and day
+// (day stays fixed; delete + re-add if you want it under a different day).
+function openEditExerciseModal(dayId, exId) {
+  const ex = (library[dayId] || []).find((e) => e.id === exId);
+  if (!ex) return;
+
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`
+    <div class="modal">
+      <h3>Edit ${ex.name}</h3>
+      <div class="form-row">
+        <label>Exercise name</label>
+        <input type="text" id="edit-name" value="${ex.name}" />
+      </div>
+      <div class="form-row">
+        <label>How is this tracked?</label>
+        <select id="edit-track">
+          <option value="weight">Weight + Reps</option>
+          <option value="bodyweight">Bodyweight (reps only)</option>
+          <option value="time">Time held (seconds)</option>
+        </select>
+      </div>
+      <div id="edit-weight-fields">
+        <div class="form-row">
+          <label>Progression type</label>
+          <select id="edit-type">
+            <option value="upper">Upper body (+5 lbs)</option>
+            <option value="lower">Lower body (+10 lbs)</option>
+            <option value="other">Other (+5 lbs)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Current weight per set (lbs)</label>
+          <div class="weights-row">
+            <input type="number" id="edit-w1" />
+            <input type="number" id="edit-w2" />
+            <input type="number" id="edit-w3" />
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label id="edit-targets-label">Target reps per set</label>
+        <div class="weights-row">
+          <input type="number" id="edit-t1" />
+          <input type="number" id="edit-t2" />
+          <input type="number" id="edit-t3" />
+        </div>
+        <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="edit-cancel-btn">Cancel</button>
+        <button class="btn-primary" id="edit-save-btn">Save changes</button>
+      </div>
+    </div>
+  `);
+
+  const nameInput = modal.querySelector("#edit-name");
+  const trackSelect = modal.querySelector("#edit-track");
+  const typeSelect = modal.querySelector("#edit-type");
+  const weightFields = modal.querySelector("#edit-weight-fields");
+  const targetsLabel = modal.querySelector("#edit-targets-label");
+  const w1Input = modal.querySelector("#edit-w1");
+  const w2Input = modal.querySelector("#edit-w2");
+  const w3Input = modal.querySelector("#edit-w3");
+  const t1Input = modal.querySelector("#edit-t1");
+  const t2Input = modal.querySelector("#edit-t2");
+  const t3Input = modal.querySelector("#edit-t3");
+
+  trackSelect.value = ex.trackType || "weight";
+  typeSelect.value = ex.type || "other";
+  const w = ex.weights || [20, 20, 20];
+  w1Input.value = w[0]; w2Input.value = w[1]; w3Input.value = w[2];
+  t1Input.value = targetForSet(ex, 0);
+  t2Input.value = targetForSet(ex, 1);
+  t3Input.value = targetForSet(ex, 2);
+
+  function updateFieldVisibility() {
+    const t = trackSelect.value;
+    weightFields.style.display = t === "weight" ? "" : "none";
+    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : "Target reps per set";
+  }
+  trackSelect.onchange = updateFieldVisibility;
+  updateFieldVisibility();
+
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+  modal.querySelector("#edit-cancel-btn").onclick = () => document.body.removeChild(overlay);
+  modal.querySelector("#edit-save-btn").onclick = () => {
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    const trackType = trackSelect.value;
+    const type = typeSelect.value;
+    const weights = [Number(w1Input.value) || 0, Number(w2Input.value) || 0, Number(w3Input.value) || 0];
+    const targets = [Number(t1Input.value) || 1, Number(t2Input.value) || 1, Number(t3Input.value) || 1];
+
+    Object.assign(ex, { name, trackType, type, weights, targets });
+    saveLibrary(library);
+    upsertBank(ex);
+
     document.body.removeChild(overlay);
     render();
   };

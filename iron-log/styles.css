@@ -153,6 +153,13 @@ body {
   margin-bottom: 14px;
   gap: 10px;
 }
+.ex-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ex-edit-btn,
 .ex-delete-btn {
   background: transparent;
   border: 1.5px solid var(--border);
@@ -167,6 +174,7 @@ body {
   line-height: 1;
   flex-shrink: 0;
 }
+.ex-edit-btn:hover { color: var(--primary); border-color: var(--primary); }
 .ex-delete-btn:hover { color: var(--danger); border-color: var(--danger); }
 .ex-card-footer:empty { display: none; }
 .ex-name { font-family: 'Oswald', sans-serif; font-size: 19px; font-weight: 600; color: var(--text); }

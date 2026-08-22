@@ -1,14 +1,15 @@
 // ---------- Data ----------
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
 // Day "type" is now something you assign per date (like the Sunday Planner),
-// not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
-// free-text note; Rest takes nothing.
+// not a fixed weekly rotation. Every loggable day works identically — its
+// own exercise list, bank-integrated add/edit, circuits, and an optional
+// finisher list. Rest is the only exception (no logging needed).
 const DAYS = [
   { id: "upper", label: "Upper Body", short: "UP", loggable: true },
   { id: "lower", label: "Lower Body", short: "LOW", loggable: true },
   { id: "core", label: "Core", short: "CORE", loggable: true },
   { id: "mobility", label: "Mobility", short: "MOB", loggable: true },
-  { id: "cardio", label: "Cardio", short: "CARDIO", loggable: false, isCardio: true },
+  { id: "cardio", label: "Cardio", short: "CARDIO", loggable: true },
   { id: "rest", label: "Rest", short: "REST", loggable: false },
 ];
 const EXERCISE_DAYS = DAYS.filter((d) => d.loggable);
@@ -30,7 +31,7 @@ function listLabel(listKey) {
 }
 
 // No preloaded exercises — starts empty, everything added via the + button.
-const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [] };
+const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [], cardio: [] };
 
 const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
 const DEFAULT_TARGET_REPS = 10;
@@ -405,23 +406,6 @@ function renderToday() {
     return wrap;
   }
 
-  if (current.id === "cardio") {
-    const todayLog = logs[state.selectedDate] || { dayId: current.id, entries: {} };
-    const noteBox = el(`
-      <div class="ex-card">
-        <div class="ex-name" style="margin-bottom:10px;">Cardio notes</div>
-        <textarea class="cardio-note" placeholder="Duration, distance, HR zone, how it felt...">${todayLog.note || ""}</textarea>
-      </div>
-    `);
-    noteBox.querySelector("textarea").onchange = (e) => {
-      if (!logs[state.selectedDate]) logs[state.selectedDate] = { dayId: current.id, entries: {} };
-      logs[state.selectedDate].note = e.target.value;
-      saveLogs(logs);
-    };
-    wrap.appendChild(noteBox);
-    return wrap;
-  }
-
   const dayExercises = library[current.id] || [];
   const todayLog = logs[state.selectedDate] || { dayId: current.id, entries: {} };
 
@@ -633,12 +617,16 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
       </div>
       <div class="plate-stack"></div>
       <div class="ex-card-actions">
+        <button class="ex-move-up-btn" title="Move up">▲</button>
+        <button class="ex-move-down-btn" title="Move down">▼</button>
         <button class="ex-edit-btn" title="Edit targets/weights">✎</button>
         <button class="ex-delete-btn" title="Remove exercise">✕</button>
       </div>
     </div>
   `);
   top.querySelector(".plate-stack").appendChild(buildPlates(sets, ex));
+  top.querySelector(".ex-move-up-btn").onclick = () => moveExerciseInList(dayId, ex.id, -1);
+  top.querySelector(".ex-move-down-btn").onclick = () => moveExerciseInList(dayId, ex.id, 1);
   top.querySelector(".ex-edit-btn").onclick = () => openEditExerciseModal(dayId, ex.id);
   top.querySelector(".ex-delete-btn").onclick = () => removeExerciseFromDay(dayId, ex.id);
   card.appendChild(top);
@@ -739,6 +727,17 @@ function cssEscape(s) {
   return window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }
 
+function moveExerciseInList(listKey, exId, direction) {
+  const list = library[listKey] || [];
+  const idx = list.findIndex((e) => e.id === exId);
+  if (idx === -1) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= list.length) return;
+  [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+  saveLibrary(library);
+  render();
+}
+
 function removeExerciseFromDay(dayId, exId) {
   const ex = allExercises()[exId];
   const dayLabel = listLabel(dayId);
@@ -808,9 +807,13 @@ function renderHistory() {
     .sort()
     .reverse();
 
-  const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
+  const exportBtn = el(`<button class="summary-btn" style="margin-bottom:10px;">⬇ Export CSV</button>`);
   exportBtn.onclick = openExportModal;
   wrap.appendChild(exportBtn);
+
+  const clearBtn = el(`<button class="clear-history-btn">🗑 Clear Workout History & Start Fresh</button>`);
+  clearBtn.onclick = clearAllHistory;
+  wrap.appendChild(clearBtn);
 
   if (dates.length === 0) {
     wrap.appendChild(el(`<div class="empty-state">No sessions logged yet.</div>`));
@@ -992,6 +995,27 @@ function downloadFile(content, filename, mime) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---- Manual reset: clear all logged history ----
+// Wipes every logged day (sets, notes, finisher entries) but leaves the
+// exercise library and bank completely intact — no need to re-add anything,
+// just a clean slate for logging going forward.
+function clearAllHistory() {
+  const dateCount = Object.keys(logs).length;
+  if (dateCount === 0) {
+    alert("No logged history to clear.");
+    return;
+  }
+  const ok = confirm(
+    `This will permanently delete all ${dateCount} logged day(s) of workout history.\n\n` +
+    `Your exercise list and bank stay exactly as they are — you won't need to re-add anything.\n\n` +
+    `This can't be undone. Continue?`
+  );
+  if (!ok) return;
+  logs = {};
+  saveLogs(logs);
+  render();
 }
 
 // ---- One-time data migration ----

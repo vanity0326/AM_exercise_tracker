@@ -488,6 +488,27 @@ select {
   cursor: pointer;
 }
 .check-grid.one-col { grid-template-columns: 1fr; }
+.finisher-add-btn {
+  width: 100%;
+  background: transparent;
+  border: 1.5px dashed var(--sage);
+  color: var(--sage);
+  border-radius: 12px;
+  padding: 12px 0;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 14px;
+}
+.finisher-heading {
+  font-family: 'Oswald', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sage);
+  margin: 18px 0 10px;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--border);
+}
 .summary-row {
   border-bottom: 1px solid var(--border);
   padding: 12px 0;

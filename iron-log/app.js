@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v15";
+const APP_VERSION = "v17";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -12,6 +12,22 @@ const DAYS = [
   { id: "rest", label: "Rest", short: "REST", loggable: false },
 ];
 const EXERCISE_DAYS = DAYS.filter((d) => d.loggable);
+
+// A "finisher" list is a second exercise list per day (e.g. an elliptical
+// finisher after Upper lifting), stored under its own library key so it
+// works exactly like a primary day's exercises — same Add/Edit/bank/
+// progression — without changing the day's actual type.
+function finisherKey(dayId) {
+  return dayId + "_finisher";
+}
+function listLabel(listKey) {
+  if (listKey.endsWith("_finisher")) {
+    const base = listKey.slice(0, -"_finisher".length);
+    const d = DAYS.find((x) => x.id === base);
+    return `${d ? d.label : base} Finisher`;
+  }
+  return DAYS.find((d) => d.id === listKey)?.label || listKey;
+}
 
 // No preloaded exercises — starts empty, everything added via the + button.
 const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [] };
@@ -407,6 +423,7 @@ function renderToday() {
         No exercises added for ${current.label} yet. Tap the + button to add one.
       </div>
     `));
+    wrap.appendChild(renderFinisherSection(current.id, todayLog));
     return wrap;
   }
 
@@ -435,6 +452,40 @@ function renderToday() {
     actionRow.appendChild(groupBtn);
   }
   wrap.appendChild(actionRow);
+
+  wrap.appendChild(renderFinisherSection(current.id, todayLog));
+
+  return wrap;
+}
+
+// A finisher list works exactly like a primary day's exercises — same
+// cards, same Add Exercise modal (bank included), same edit/delete/circuit
+// grouping — just stored under its own key and shown in a separate section.
+function renderFinisherSection(dayId, todayLog) {
+  const wrap = document.createElement("div");
+  const fKey = finisherKey(dayId);
+  const finisherExercises = library[fKey] || [];
+
+  if (finisherExercises.length > 0) {
+    wrap.appendChild(el(`<div class="finisher-heading">🏃 Cardio Finisher</div>`));
+    const tabCursor = makeTabCursor();
+    const plan = buildRenderPlan(finisherExercises);
+    plan.forEach((item) => {
+      if (item.type === "solo") {
+        const ex = item.ex;
+        const entry = todayLog.entries?.[ex.id];
+        const sets = entry?.sets || defaultSets(ex);
+        const blockSize = sets.length * (ex.trackType === "weight" ? 2 : 1);
+        wrap.appendChild(renderExerciseCard(ex, sets, tabCursor.next(blockSize), fKey));
+      } else {
+        wrap.appendChild(renderCircuitCard(item.exercises, item.groupId, tabCursor, todayLog, fKey));
+      }
+    });
+  }
+
+  const addBtn = el(`<button class="finisher-add-btn">🏃 + Add Cardio Finisher Exercise</button>`);
+  addBtn.onclick = () => openAddExerciseModal(fKey);
+  wrap.appendChild(addBtn);
 
   return wrap;
 }
@@ -680,7 +731,7 @@ function cssEscape(s) {
 
 function removeExerciseFromDay(dayId, exId) {
   const ex = allExercises()[exId];
-  const dayLabel = DAYS.find((d) => d.id === dayId)?.label || "this day";
+  const dayLabel = listLabel(dayId);
   const ok = confirm(`Remove ${ex ? ex.name : "this exercise"} from ${dayLabel}? Past logged history for it stays in History.`);
   if (!ok) return;
   library[dayId] = (library[dayId] || []).filter((e) => e.id !== exId);
@@ -714,9 +765,10 @@ function updateSet(exId, idx, field, value) {
 }
 
 function applyProgression(exId) {
-  const dayId = selectedDayInfo()?.id || state.selectedDayId;
+  const listKey = Object.keys(library).find((k) => (library[k] || []).some((e) => e.id === exId));
+  if (!listKey) return;
   let updatedEx = null;
-  library[dayId] = library[dayId].map((e) => {
+  library[listKey] = library[listKey].map((e) => {
     if (e.id !== exId) return e;
     if (e.trackType === "weight") {
       const bump = PROGRESSION_BUMP[e.type] || PROGRESSION_BUMP.other;
@@ -739,7 +791,7 @@ function applyProgression(exId) {
 function renderHistory() {
   const wrap = document.createElement("div");
   const dates = Object.keys(logs)
-    .filter((d) => Object.keys(logs[d].entries || {}).length > 0 || !!logs[d].note)
+    .filter((d) => Object.keys(logs[d].entries || {}).length > 0 || !!logs[d].note || !!logs[d].finisherNote)
     .sort()
     .reverse();
 
@@ -776,6 +828,9 @@ function renderHistory() {
     });
     if (dayLog.note) {
       card.appendChild(el(`<div class="hist-line"><b>Notes:</b> ${dayLog.note}</div>`));
+    }
+    if (dayLog.finisherNote) {
+      card.appendChild(el(`<div class="hist-line"><b>🏃 Cardio Finisher:</b> ${dayLog.finisherNote}</div>`));
     }
     wrap.appendChild(card);
   });
@@ -891,6 +946,9 @@ function exportCSV(filters) {
 
     if (dayLog.note && !f.exerciseId) {
       rows.push([date, dayLabel, "", "cardio-note", "", "", "", dayLog.note]);
+    }
+    if (dayLog.finisherNote && !f.exerciseId) {
+      rows.push([date, dayLabel, "", "finisher-note", "", "", "", dayLog.finisherNote]);
     }
   });
 
@@ -1079,6 +1137,7 @@ function openWorkoutSummaryModal(dayId) {
   const date = state.selectedDate;
   const dayLabel = DAYS.find((d) => d.id === dayId)?.label || "Workout";
   const dayExercises = library[dayId] || [];
+  const finisherExercises = library[finisherKey(dayId)] || [];
   const todayLog = logs[date] || { dayId, entries: {} };
 
   const overlay = el(`<div class="modal-overlay"></div>`);
@@ -1093,11 +1152,10 @@ function openWorkoutSummaryModal(dayId) {
   `);
 
   const list = modal.querySelector("#summary-list");
-  if (dayExercises.length === 0) {
-    list.appendChild(el(`<div class="empty-state">No exercises set up for ${dayLabel} yet.</div>`));
-  } else {
+
+  function appendExerciseRows(exercises) {
     let anyLogged = false;
-    dayExercises.forEach((ex) => {
+    exercises.forEach((ex) => {
       const entry = todayLog.entries?.[ex.id];
       const sets = entry?.sets || defaultSets(ex);
       const hasAnyValue = sets.some((s) => s.reps != null);
@@ -1121,14 +1179,28 @@ function openWorkoutSummaryModal(dayId) {
       `;
       list.appendChild(row);
     });
+    return anyLogged;
+  }
 
-    if (!anyLogged) {
+  if (dayExercises.length === 0 && finisherExercises.length === 0) {
+    list.appendChild(el(`<div class="empty-state">No exercises set up for ${dayLabel} yet.</div>`));
+  } else {
+    const anyLoggedPrimary = appendExerciseRows(dayExercises);
+    let anyLoggedFinisher = false;
+    if (finisherExercises.length > 0) {
+      list.appendChild(el(`<div class="finisher-heading" style="margin-top:6px;">🏃 Cardio Finisher</div>`));
+      anyLoggedFinisher = appendExerciseRows(finisherExercises);
+    }
+    if (!anyLoggedPrimary && !anyLoggedFinisher) {
       list.appendChild(el(`<div class="field-hint" style="margin-top:10px;">Nothing logged yet today for ${dayLabel}.</div>`));
     }
   }
 
   if (todayLog.note) {
     list.appendChild(el(`<div class="summary-row"><div class="summary-row-top"><span class="summary-ex-name">Notes</span></div><div class="summary-sets">${todayLog.note}</div></div>`));
+  }
+  if (todayLog.finisherNote) {
+    list.appendChild(el(`<div class="summary-row"><div class="summary-row-top"><span class="summary-ex-name">🏃 Cardio Finisher Notes</span></div><div class="summary-sets">${todayLog.finisherNote || "(no notes added)"}</div></div>`));
   }
 
   overlay.appendChild(modal);
@@ -1263,12 +1335,12 @@ function readNumberRow(container) {
   return Array.from(container.querySelectorAll("input")).map((i) => Number(i.value) || 0);
 }
 
-function openAddExerciseModal() {
+function openAddExerciseModal(explicitListKey) {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const bankEntries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
   const modal = el(`
     <div class="modal">
-      <h3>Add Exercise</h3>
+      <h3>${explicitListKey ? "Add Cardio Finisher Exercise" : "Add Exercise"}</h3>
       <div class="form-row">
         <label>From your bank</label>
         <select id="ex-bank">
@@ -1280,7 +1352,7 @@ function openAddExerciseModal() {
         <label>Exercise name</label>
         <input type="text" id="ex-name" placeholder="e.g. Cable Woodchop" />
       </div>
-      <div class="form-row">
+      <div class="form-row" id="ex-day-row" ${explicitListKey ? 'style="display:none"' : ""}>
         <label>Day</label>
         <select id="ex-day"></select>
       </div>
@@ -1394,7 +1466,7 @@ function openAddExerciseModal() {
   modal.querySelector("#save-btn").onclick = () => {
     const name = nameInput.value.trim();
     if (!name) { nameInput.focus(); return; }
-    const dayId = modal.querySelector("#ex-day").value;
+    const dayId = explicitListKey || modal.querySelector("#ex-day").value;
     const trackType = trackSelect.value;
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
@@ -1407,7 +1479,7 @@ function openAddExerciseModal() {
     saveLibrary(library);
     upsertBank(newEx);
 
-    state.selectedDayId = dayId;
+    if (!explicitListKey) state.selectedDayId = dayId;
     document.body.removeChild(overlay);
     render();
   };

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v17";
+const APP_VERSION = "v18";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. EXERCISE_DAYS hold logged sets; Cardio takes a
 // free-text note; Rest takes nothing.
@@ -35,20 +35,26 @@ const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [] };
 const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
 const DEFAULT_TARGET_REPS = 10;
 const DEFAULT_TARGET_SECONDS = 30;
+const DEFAULT_TARGET_MINUTES = 20;
 const BODYWEIGHT_REP_BUMP = 2;
 const TIME_BUMP_SECONDS = 10;
+const DURATION_BUMP_MINUTES = 5;
 
 // Every exercise has a trackType controlling how it's logged:
 //   weight     — lbs + reps per set (default, e.g. Chest Press)
-//   bodyweight — reps only per set, no weight (e.g. Cat-Cow)
+//   bodyweight — reps only per set, no weight (e.g. Cat-Cow, or laps for swim)
 //   time       — seconds held per set, no weight (e.g. a static stretch)
+//   duration   — minutes per set, no weight (e.g. elliptical, treadmill)
 const TRACK_TYPES = {
   weight: { label: "Weight + Reps" },
   bodyweight: { label: "Bodyweight (reps only)" },
   time: { label: "Time held (seconds)" },
+  duration: { label: "Duration (minutes)" },
 };
 function exUnitLabel(ex) {
-  return ex.trackType === "time" ? "sec" : "reps";
+  if (ex.trackType === "time") return "sec";
+  if (ex.trackType === "duration") return "min";
+  return "reps";
 }
 function exNumSets(ex) {
   const n = ex.numSets;
@@ -62,16 +68,18 @@ function targetForSet(ex, setIndex) {
   if (Array.isArray(ex.targets) && ex.targets[setIndex] != null) return ex.targets[setIndex];
   // Fallback for exercises saved before per-set targets existed.
   if (ex.target != null) return ex.target;
-  return ex.trackType === "time" ? DEFAULT_TARGET_SECONDS : DEFAULT_TARGET_REPS;
+  if (ex.trackType === "time") return DEFAULT_TARGET_SECONDS;
+  if (ex.trackType === "duration") return DEFAULT_TARGET_MINUTES;
+  return DEFAULT_TARGET_REPS;
 }
 function defaultTargets(trackType, n) {
-  const base = trackType === "time" ? DEFAULT_TARGET_SECONDS : DEFAULT_TARGET_REPS;
+  const base = trackType === "time" ? DEFAULT_TARGET_SECONDS : trackType === "duration" ? DEFAULT_TARGET_MINUTES : DEFAULT_TARGET_REPS;
   return Array.from({ length: n || 3 }, () => base);
 }
 function targetLabelFor(ex) {
   const n = exNumSets(ex);
   const vals = Array.from({ length: n }, (_, i) => targetForSet(ex, i));
-  const suffix = ex.trackType === "time" ? "s" : "";
+  const suffix = ex.trackType === "time" ? "s" : ex.trackType === "duration" ? "min" : "";
   if (vals.every((v) => v === vals[0])) return `${vals[0]}${suffix} · all ${n} set${n === 1 ? "" : "s"}`;
   return vals.map((v) => `${v}${suffix}`).join(" / ");
 }
@@ -641,7 +649,7 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   sets.forEach((s, i) => {
     const col = el(`
       <div class="set-col">
-        ${isWeighted ? `<label>lbs</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${unit === "sec" ? "hold" : "BW"}</label>`}
+        ${isWeighted ? `<label>lbs</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${unit === "sec" ? "hold" : unit === "min" ? "time" : "BW"}</label>`}
         <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + n + i : tabStart + i}" />
       </div>
     `);
@@ -692,6 +700,8 @@ function fillCardFooter(footer, ex, allTopped) {
     bumpLabel = `+${bump} lbs`;
   } else if (ex.trackType === "time") {
     bumpLabel = `+${TIME_BUMP_SECONDS}s hold`;
+  } else if (ex.trackType === "duration") {
+    bumpLabel = `+${DURATION_BUMP_MINUTES} min`;
   } else {
     bumpLabel = `+${BODYWEIGHT_REP_BUMP} reps`;
   }
@@ -776,6 +786,9 @@ function applyProgression(exId) {
     } else if (e.trackType === "time") {
       const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + TIME_BUMP_SECONDS);
       updatedEx = { ...e, targets };
+    } else if (e.trackType === "duration") {
+      const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + DURATION_BUMP_MINUTES);
+      updatedEx = { ...e, targets };
     } else {
       const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + BODYWEIGHT_REP_BUMP);
       updatedEx = { ...e, targets };
@@ -822,7 +835,7 @@ function renderHistory() {
       const unit = exUnitLabel(ex);
       const setStr = entry.sets.map((s) => {
         if (s.reps == null) return "–";
-        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${s.reps}${unit === "sec" ? "s" : " reps"}`;
+        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${s.reps}${unit === "sec" ? "s" : unit === "min" ? " min" : " reps"}`;
       }).join(", ");
       card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}</div>`));
     });
@@ -1045,7 +1058,9 @@ function renderProgress() {
 
   const currentEx = exMap[state.progressExId];
   const isWeighted = currentEx && currentEx.trackType === "weight";
-  const metricLabel = currentEx && currentEx.trackType === "time" ? "sec held" : isWeighted ? "lbs" : "reps";
+  const metricLabel = currentEx && currentEx.trackType === "time" ? "sec held"
+    : currentEx && currentEx.trackType === "duration" ? "min"
+    : isWeighted ? "lbs" : "reps";
 
   const points = [];
   Object.entries(logs).sort(([a], [b]) => (a < b ? -1 : 1)).forEach(([date, dayLog]) => {
@@ -1277,7 +1292,7 @@ function openImportModal() {
       const name = (item.name || "").trim();
       const day = item.day;
       const type = ["upper", "lower", "other"].includes(item.type) ? item.type : "other";
-      const trackType = ["weight", "bodyweight", "time"].includes(item.trackType) ? item.trackType : "weight";
+      const trackType = ["weight", "bodyweight", "time", "duration"].includes(item.trackType) ? item.trackType : "weight";
       const weights = Array.isArray(item.weights) && item.weights.length >= 1
         ? item.weights.map((w) => Number(w) || 0)
         : [20, 20, 20];
@@ -1362,6 +1377,7 @@ function openAddExerciseModal(explicitListKey) {
           <option value="weight">Weight + Reps</option>
           <option value="bodyweight">Bodyweight (reps only)</option>
           <option value="time">Time held (seconds)</option>
+          <option value="duration">Duration (minutes)</option>
         </select>
       </div>
       <div class="form-row">
@@ -1416,7 +1432,7 @@ function openAddExerciseModal(explicitListKey) {
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
-    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : "Target reps per set";
+    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : t === "duration" ? "Target duration per set (minutes)" : "Target reps per set";
   }
 
   function rebuildRows(count, weightVals, targetVals) {
@@ -1430,7 +1446,7 @@ function openAddExerciseModal(explicitListKey) {
     const prevW = readNumberRow(weightsRow);
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
-    const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : 10);
+    const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : trackSelect.value === "duration" ? 20 : 10);
     rebuildRows(
       n,
       Array.from({ length: n }, (_, i) => (prevW[i] != null ? prevW[i] : lastW)),
@@ -1510,6 +1526,7 @@ function openEditExerciseModal(dayId, exId) {
           <option value="weight">Weight + Reps</option>
           <option value="bodyweight">Bodyweight (reps only)</option>
           <option value="time">Time held (seconds)</option>
+          <option value="duration">Duration (minutes)</option>
         </select>
       </div>
       <div class="form-row">
@@ -1562,7 +1579,7 @@ function openEditExerciseModal(dayId, exId) {
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
-    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : "Target reps per set";
+    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : t === "duration" ? "Target duration per set (minutes)" : "Target reps per set";
   }
   trackSelect.onchange = updateFieldVisibility;
   updateFieldVisibility();
@@ -1573,7 +1590,7 @@ function openEditExerciseModal(dayId, exId) {
     const prevW = readNumberRow(weightsRow);
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
-    const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : 10);
+    const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : trackSelect.value === "duration" ? 20 : 10);
     setNumberRow(weightsRow, n, Array.from({ length: n }, (_, i) => (prevW[i] != null ? prevW[i] : lastW)));
     setNumberRow(targetsRow, n, Array.from({ length: n }, (_, i) => (prevT[i] != null ? prevT[i] : lastT)));
   };

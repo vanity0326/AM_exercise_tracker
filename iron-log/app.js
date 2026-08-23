@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v30";
+const APP_VERSION = "v31";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -728,8 +728,15 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   return card;
 }
 
+// A zone-tracked exercise with a target of 0 for a given zone means "not
+// planning to spend time here" — it shouldn't block the exercise from
+// showing as topped out, or require a value to be entered at all.
+function isSetSkippable(ex, i) {
+  return isZoneTracked(ex) && targetForSet(ex, i) === 0;
+}
+
 function computeAllTopped(sets, ex) {
-  return sets.every((s, i) => s.reps != null && s.reps >= targetForSet(ex, i));
+  return sets.every((s, i) => isSetSkippable(ex, i) || (s.reps != null && s.reps >= targetForSet(ex, i)));
 }
 
 function buildPlates(sets, ex) {
@@ -737,10 +744,12 @@ function buildPlates(sets, ex) {
   const frag = document.createDocumentFragment();
   sets.forEach((s, i) => {
     const filled = s.reps != null;
-    const isTop = filled && s.reps >= targetForSet(ex, i);
+    const skippable = isSetSkippable(ex, i);
+    const isTop = skippable || (filled && s.reps >= targetForSet(ex, i));
     const flag = allTopped && i === sets.length - 1;
     const h = 34 + i * 5;
-    frag.appendChild(el(`<div class="plate ${filled ? "filled" : ""} ${isTop ? "topped" : ""} ${flag ? "flag" : ""}" style="height:${h}px">${filled ? s.reps : i + 1}</div>`));
+    const display = filled ? s.reps : skippable ? "–" : i + 1;
+    frag.appendChild(el(`<div class="plate ${filled || skippable ? "filled" : ""} ${isTop ? "topped" : ""} ${flag ? "flag" : ""}" style="height:${h}px">${display}</div>`));
   });
   return frag;
 }
@@ -1693,7 +1702,9 @@ function openAddExerciseModal(explicitListKey) {
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
     const weights = readNumberRow(weightsRow);
-    const targets = readNumberRow(targetsRow).map((t) => Math.max(t, 1));
+    // A 0-minute zone target is valid — it just means "not planning to spend
+    // time here." Only non-zone types need a hard floor of 1.
+    const targets = readNumberRow(targetsRow).map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
 
     const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets };
     if (!library[dayId]) library[dayId] = [];
@@ -1843,7 +1854,9 @@ function openEditExerciseModal(dayId, exId) {
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
     const weights = readNumberRow(weightsRow);
-    const targets = readNumberRow(targetsRow).map((t) => Math.max(t, 1));
+    // A 0-minute zone target is valid — it just means "not planning to spend
+    // time here." Only non-zone types need a hard floor of 1.
+    const targets = readNumberRow(targetsRow).map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
 
     Object.assign(ex, { name, trackType, type, numSets, weights, targets });
     saveLibrary(library);

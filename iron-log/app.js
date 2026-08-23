@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v27";
+const APP_VERSION = "v29";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -291,6 +291,30 @@ function el(html) {
   const t = document.createElement("template");
   t.innerHTML = html.trim();
   return t.content.firstElementChild;
+}
+
+// Traps Tab navigation inside a modal overlay. Without this, pressing Tab
+// jumps to whatever's behind the modal — exercise cards on the Log tab carry
+// explicit tabindex values (for the lbs→lbs→lbs→reps→reps→reps flow), and
+// browsers give those priority over the modal's own unnumbered fields,
+// yanking focus (and sometimes the modal itself) right out from under you.
+function trapFocus(overlay) {
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const focusable = Array.from(
+      overlay.querySelectorAll("input, select, textarea, button")
+    ).filter((el) => !el.disabled && el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    e.preventDefault();
+    const currentIndex = focusable.indexOf(document.activeElement);
+    let nextIndex;
+    if (e.shiftKey) {
+      nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
+    } else {
+      nextIndex = currentIndex === -1 || currentIndex === focusable.length - 1 ? 0 : currentIndex + 1;
+    }
+    focusable[nextIndex].focus();
+  });
 }
 
 // ---------- Rendering ----------
@@ -617,6 +641,7 @@ function openGroupModal(dayId) {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 function defaultSets(ex) {
@@ -980,6 +1005,7 @@ function openExportModal() {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 // ---- CSV export ----
@@ -1260,6 +1286,9 @@ function openWorkoutSummaryModal(dayId) {
         const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
         return `<span class="summary-set ${missing ? "missing" : ""}">${missing ? "not logged" : `${prefix}${weightPart}${s.reps} ${unit}`}</span>`;
       }).join(`<span class="summary-sep">·</span>`);
+      const totalLine = isZoneTracked(ex)
+        ? `<div class="summary-total">Total: ${sets.reduce((sum, s) => sum + (s.reps || 0), 0)} min</div>`
+        : "";
 
       row.innerHTML = `
         <div class="summary-row-top">
@@ -1267,6 +1296,7 @@ function openWorkoutSummaryModal(dayId) {
           <span class="summary-status">${allTopped ? "✓ topped out" : hasAnyValue ? "" : "⚠ not started"}</span>
         </div>
         <div class="summary-sets">${line}</div>
+        ${totalLine}
       `;
       list.appendChild(row);
     });
@@ -1298,6 +1328,7 @@ function openWorkoutSummaryModal(dayId) {
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
   modal.querySelector("#summary-close-btn").onclick = () => document.body.removeChild(overlay);
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 // ---- Import modal ----
@@ -1405,6 +1436,7 @@ function openImportModal() {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
   textarea.focus();
 }
 
@@ -1480,6 +1512,7 @@ function openBankManagerModal(onClose) {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 function openAddExerciseModal(explicitListKey) {
@@ -1670,6 +1703,7 @@ function openAddExerciseModal(explicitListKey) {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
   nameInput.focus();
 }
 
@@ -1816,6 +1850,7 @@ function openEditExerciseModal(dayId, exId) {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
   nameInput.focus();
 }
 

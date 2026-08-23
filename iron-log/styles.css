@@ -596,3 +596,9 @@ select {
 .summary-sets { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
 .summary-set.missing { color: var(--danger); font-style: italic; }
 .summary-sep { margin: 0 6px; color: var(--text-faint); }
+.summary-total {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-top: 4px;
+}

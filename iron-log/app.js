@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -93,7 +93,10 @@ function targetLabelFor(ex) {
   const n = exNumSets(ex);
   const vals = Array.from({ length: n }, (_, i) => targetForSet(ex, i));
   const suffix = ex.trackType === "time" ? "s" : (ex.trackType === "duration" || ex.trackType === "hr_zones") ? "min" : "";
-  if (isZoneTracked(ex)) return vals.map((v, i) => `Z${i + 1}: ${v}${suffix}`).join(" / ");
+  if (isZoneTracked(ex)) {
+    const total = vals.reduce((sum, v) => sum + v, 0);
+    return vals.map((v, i) => `Z${i + 1}: ${v}${suffix}`).join(" / ") + ` (Total: ${total} min)`;
+  }
   if (vals.every((v) => v === vals[0])) return `${vals[0]}${suffix} · all ${n} set${n === 1 ? "" : "s"}`;
   return vals.map((v) => `${v}${suffix}`).join(" / ");
 }
@@ -1504,6 +1507,7 @@ function openAddExerciseModal(explicitListKey) {
         <label id="ex-targets-label">Target reps per set</label>
         <div class="weights-row" id="ex-targets-row"></div>
         <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
+        <div class="zone-total" id="ex-zone-total" style="display:none"></div>
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="cancel-btn">Cancel</button>
@@ -1531,6 +1535,8 @@ function openAddExerciseModal(explicitListKey) {
   const trackSelect = modal.querySelector("#ex-track");
   const weightFields = modal.querySelector("#ex-weight-fields");
 
+  const zoneTotalEl = modal.querySelector("#ex-zone-total");
+
   function refreshBankOptions() {
     const current = bankSelect.value;
     const entries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
@@ -1540,6 +1546,17 @@ function openAddExerciseModal(explicitListKey) {
   }
   modal.querySelector("#manage-bank-btn").onclick = () => openBankManagerModal(refreshBankOptions);
 
+  function updateZoneTotal() {
+    if (trackSelect.value !== "hr_zones") {
+      zoneTotalEl.style.display = "none";
+      return;
+    }
+    const total = readNumberRow(targetsRow).reduce((sum, v) => sum + v, 0);
+    zoneTotalEl.textContent = `Total planned: ${total} min`;
+    zoneTotalEl.style.display = "block";
+  }
+  targetsRow.addEventListener("input", updateZoneTotal);
+
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
@@ -1548,6 +1565,7 @@ function openAddExerciseModal(explicitListKey) {
       : t === "hr_zones" ? "Target minutes per zone"
       : "Target reps per set";
     numSetsInput.disabled = t === "hr_zones";
+    updateZoneTotal();
   }
 
   function labelFnFor(trackType) {
@@ -1557,6 +1575,7 @@ function openAddExerciseModal(explicitListKey) {
   function rebuildRows(count, weightVals, targetVals) {
     setNumberRow(weightsRow, count, weightVals, labelFnFor(trackSelect.value));
     setNumberRow(targetsRow, count, targetVals, labelFnFor(trackSelect.value));
+    updateZoneTotal();
   }
 
   numSetsInput.onchange = () => {
@@ -1577,6 +1596,7 @@ function openAddExerciseModal(explicitListKey) {
     const n = trackSelect.value === "hr_zones" ? 4 : Math.max(1, Number(numSetsInput.value) || 3);
     numSetsInput.value = n;
     setNumberRow(targetsRow, n, defaultTargets(trackSelect.value, n), labelFnFor(trackSelect.value));
+    updateZoneTotal();
   };
 
   updateFieldVisibility();
@@ -1672,6 +1692,7 @@ function openEditExerciseModal(dayId, exId) {
         <label id="edit-targets-label">Target reps per set</label>
         <div class="weights-row" id="edit-targets-row"></div>
         <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
+        <div class="zone-total" id="edit-zone-total" style="display:none"></div>
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="edit-cancel-btn">Cancel</button>
@@ -1688,10 +1709,22 @@ function openEditExerciseModal(dayId, exId) {
   const targetsLabel = modal.querySelector("#edit-targets-label");
   const weightsRow = modal.querySelector("#edit-weights-row");
   const targetsRow = modal.querySelector("#edit-targets-row");
+  const zoneTotalEl = modal.querySelector("#edit-zone-total");
 
   function labelFnFor(trackType) {
     return trackType === "hr_zones" ? (i) => `Zone ${i + 1}` : (i) => `Set ${i + 1}`;
   }
+
+  function updateZoneTotal() {
+    if (trackSelect.value !== "hr_zones") {
+      zoneTotalEl.style.display = "none";
+      return;
+    }
+    const total = readNumberRow(targetsRow).reduce((sum, v) => sum + v, 0);
+    zoneTotalEl.textContent = `Total planned: ${total} min`;
+    zoneTotalEl.style.display = "block";
+  }
+  targetsRow.addEventListener("input", updateZoneTotal);
 
   trackSelect.value = ex.trackType || "weight";
   typeSelect.value = ex.type || "other";
@@ -1709,6 +1742,7 @@ function openEditExerciseModal(dayId, exId) {
       : t === "hr_zones" ? "Target minutes per zone"
       : "Target reps per set";
     numSetsInput.disabled = t === "hr_zones";
+    updateZoneTotal();
   }
   trackSelect.onchange = () => {
     updateFieldVisibility();
@@ -1716,6 +1750,7 @@ function openEditExerciseModal(dayId, exId) {
       numSetsInput.value = 4;
       setNumberRow(targetsRow, 4, defaultTargets("hr_zones", 4), labelFnFor("hr_zones"));
       setNumberRow(weightsRow, 4, Array(4).fill(20), labelFnFor("hr_zones"));
+      updateZoneTotal();
     }
   };
   updateFieldVisibility();

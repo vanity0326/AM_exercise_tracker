@@ -352,6 +352,15 @@ select {
 .form-row { margin-bottom: 16px; }
 .form-row label { display: block; font-size: 14px; color: var(--text-dim); margin-bottom: 7px; font-weight: 600; }
 .field-hint { font-size: 12px; color: var(--text-faint); margin-top: 6px; }
+.zone-total {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--primary-dim);
+  border-radius: 8px;
+}
 .manage-bank-link {
   background: transparent;
   border: none;

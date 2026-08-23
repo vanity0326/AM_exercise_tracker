@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -1394,6 +1394,62 @@ function readNumberRow(container) {
   return Array.from(container.querySelectorAll("input")).map((i) => Number(i.value) || 0);
 }
 
+// ---- Bank Manager modal ----
+// Prunes the exercise bank (the "From your bank" quick-pick list) directly.
+// Deleting here never touches exercises already placed on any day, or any
+// logged history — it only removes the reuse shortcut.
+function openBankManagerModal(onClose) {
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`
+    <div class="modal">
+      <h3>Manage Exercise Bank</h3>
+      <div class="field-hint" style="margin-bottom:14px;">Removing something here only affects this quick-pick list — it won't touch exercises already placed on any day, or any logged history.</div>
+      <div id="bank-manager-list"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="bank-manager-close-btn" style="flex:1">Done</button>
+      </div>
+    </div>
+  `);
+  const list = modal.querySelector("#bank-manager-list");
+
+  function renderList() {
+    list.innerHTML = "";
+    const entries = Object.entries(bank).sort((a, b) => a[1].name.localeCompare(b[1].name));
+    if (entries.length === 0) {
+      list.appendChild(el(`<div class="empty-state">Bank is empty.</div>`));
+      return;
+    }
+    entries.forEach(([key, entry]) => {
+      const row = el(`
+        <div class="bank-row">
+          <div>
+            <div class="bank-row-name">${entry.name}</div>
+            <div class="bank-row-meta">${TRACK_TYPES[entry.trackType]?.label || entry.trackType}</div>
+          </div>
+          <button class="bank-row-delete-btn" title="Remove from bank">✕</button>
+        </div>
+      `);
+      row.querySelector(".bank-row-delete-btn").onclick = () => {
+        if (!confirm(`Remove "${entry.name}" from your bank?\n\nIt stays untouched on any day it's currently placed on, and in logged history — this only removes it from the quick-pick list.`)) return;
+        delete bank[key];
+        saveBank(bank);
+        renderList();
+      };
+      list.appendChild(row);
+    });
+  }
+  renderList();
+
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) { document.body.removeChild(overlay); if (onClose) onClose(); } };
+  modal.querySelector("#bank-manager-close-btn").onclick = () => {
+    document.body.removeChild(overlay);
+    if (onClose) onClose();
+  };
+
+  document.body.appendChild(overlay);
+}
+
 function openAddExerciseModal(explicitListKey) {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const bankEntries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
@@ -1406,6 +1462,7 @@ function openAddExerciseModal(explicitListKey) {
           <option value="">+ New exercise</option>
           ${bankEntries.map((b) => `<option value="${bankKey(b.name)}">${b.name}</option>`).join("")}
         </select>
+        <button type="button" class="manage-bank-link" id="manage-bank-btn">🗑 Manage bank</button>
       </div>
       <div class="form-row">
         <label>Exercise name</label>
@@ -1473,6 +1530,15 @@ function openAddExerciseModal(explicitListKey) {
   const bankSelect = modal.querySelector("#ex-bank");
   const trackSelect = modal.querySelector("#ex-track");
   const weightFields = modal.querySelector("#ex-weight-fields");
+
+  function refreshBankOptions() {
+    const current = bankSelect.value;
+    const entries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
+    bankSelect.innerHTML = `<option value="">+ New exercise</option>` +
+      entries.map((b) => `<option value="${bankKey(b.name)}">${b.name}</option>`).join("");
+    bankSelect.value = entries.some((b) => bankKey(b.name) === current) ? current : "";
+  }
+  modal.querySelector("#manage-bank-btn").onclick = () => openBankManagerModal(refreshBankOptions);
 
   function updateFieldVisibility() {
     const t = trackSelect.value;

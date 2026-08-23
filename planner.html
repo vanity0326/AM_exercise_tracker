@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sunday Night Planning Card</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#1a1a18;--ink-2:#4a4a44;--ink-3:#8a8a82;--ink-4:#c8c8be;
+  --paper:#f7f6f0;--paper-2:#eeede4;--paper-3:#e4e3d8;
+  --swim:#0f6e56;--ellip:#185fa5;--lift:#854f0b;--core:#534ab7;--mob:#5f5e5a;--rest:#993c1d;--accent:#1d9e75;--walk:#3f7d3a;--tread:#946b1f;
+}
+body{font-family:'Nunito',sans-serif;background:var(--paper);color:var(--ink);padding:2rem;font-size:16px}
+.page{max-width:880px;margin:0 auto}
+
+/* MASTHEAD */
+.masthead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:1.25rem;margin-bottom:1.75rem}
+.masthead h1{font-size:24px;font-weight:700;letter-spacing:-0.02em;line-height:1.2}
+.meta-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.meta-label{font-size:13px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:0.07em}
+.meta-input{font-family:'Nunito',sans-serif;font-size:16px;background:transparent;border:none;border-bottom:1.5px solid var(--ink-4);padding:3px 0;color:var(--ink);outline:none;width:44px;text-align:center}
+.meta-input:focus{border-bottom-color:var(--accent)}
+.week-wrap{text-align:right}
+.week-label{font-size:13px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:4px}
+.week-input{font-family:'Nunito',sans-serif;font-size:16px;background:transparent;border:none;border-bottom:1.5px solid var(--ink-4);padding:4px 0;text-align:right;color:var(--ink);outline:none;width:180px}
+.week-input:focus{border-bottom-color:var(--accent)}
+
+/* TWO COL */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.75rem}
+.section-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--ink-3);margin-bottom:0.75rem}
+.step-list{list-style:none}
+.step-list li{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--paper-3);font-size:15px;color:var(--ink-2);line-height:1.5}
+.step-list li:last-child{border-bottom:none}
+.step-num{font-size:13px;font-weight:700;color:var(--accent);min-width:20px;padding-top:2px}
+.rules-box{border:1.5px solid var(--ink-4);border-radius:6px;padding:14px 16px}
+.rule-item{display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--ink-2);padding:7px 0;border-bottom:1px solid var(--paper-3);line-height:1.4}
+.rule-item:last-child{border-bottom:none}
+.rule-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:5px;flex-shrink:0}
+
+/* SESSION MENU */
+.session-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:1.75rem}
+.chip{border-radius:6px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.chip-name{font-size:15px;font-weight:600}
+.chip-count{font-size:20px;font-weight:700;opacity:0.45}
+.c-swim{background:transparent;color:var(--swim);border:2px solid var(--swim)}
+.c-ellip{background:transparent;color:var(--ellip);border:2px solid var(--ellip)}
+.c-lift{background:transparent;color:var(--lift);border:2px solid var(--lift)}
+.c-core{background:transparent;color:var(--core);border:2px solid var(--core)}
+.c-mob{background:transparent;color:var(--mob);border:2px solid var(--mob)}
+.c-walk{background:transparent;color:var(--walk);border:2px solid var(--walk)}
+.c-tread{background:transparent;color:var(--tread);border:2px solid var(--tread)}
+
+/* WEEK GRID */
+.week-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px;margin-bottom:1.5rem}
+.day-cell{border:1.5px solid var(--paper-3);border-radius:8px;overflow:hidden}
+.day-cell.is-sunday{border:2.5px solid var(--accent)}
+.day-cell.is-commute{border:2px solid var(--rest)}
+.day-hdr{padding:6px 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-3);display:flex;justify-content:space-between;align-items:center;background:var(--paper-2)}
+.is-sunday .day-hdr{color:var(--swim);background:transparent}
+.is-commute .day-hdr{color:var(--rest);background:transparent}
+.day-body{padding:8px;min-height:108px}
+.pick-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-4);margin-bottom:3px;margin-top:6px}
+.pick-label:first-child{margin-top:0}
+.day-sel{width:100%;font-family:'Nunito',sans-serif;font-size:14px;background:transparent;border:1.5px solid var(--ink-4);border-radius:4px;color:var(--ink-2);outline:none;cursor:pointer;padding:4px 6px;appearance:none;-webkit-appearance:none;line-height:1.4}
+.day-sel:focus{border-color:var(--accent)}
+.day-sel.levelup{border-style:dashed;font-size:13px}
+.commute-btn{cursor:pointer;font-size:13px;background:none;border:none;color:inherit;padding:0;opacity:0.7;font-family:'Nunito',sans-serif}
+.commute-btn:hover{opacity:1}
+.commute-note{font-size:13px;color:var(--rest);font-weight:600;margin-bottom:4px}
+.commute-sel{width:100%;font-family:'Nunito',sans-serif;font-size:13px;background:transparent;border:1.5px solid var(--rest);border-radius:4px;color:var(--rest);outline:none;cursor:pointer;padding:4px 6px;appearance:none;-webkit-appearance:none}
+
+/* SUMMARY */
+.summary-bar{background:transparent;border:1.5px solid var(--ink-4);border-radius:8px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:1.5rem;flex-wrap:wrap}
+.sum-item{text-align:center}
+.sum-val{font-size:22px;font-weight:700;color:var(--ink)}
+.sum-val.good{color:var(--accent)}
+.sum-val.warn{color:#ba7517}
+.sum-val.bad{color:#a32d2d}
+.sum-lbl{font-size:12px;color:var(--ink-3);margin-top:2px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
+.sum-div{width:1px;height:38px;background:var(--paper-3)}
+
+/* VALIDATION */
+.val-msg{font-size:15px;padding:12px 16px;border-radius:8px;margin-bottom:1.5rem;display:none;line-height:1.6}
+.val-msg.error{background:#fcebeb;color:#a32d2d}
+.val-msg.success{background:#e1f5ee;color:var(--swim)}
+
+/* MANTRA */
+.mantra{border-left:3px solid var(--ink);padding:10px 18px;margin-bottom:1.5rem;font-size:15px;font-style:italic;color:var(--ink-2);line-height:1.6}
+
+/* ACTIONS */
+.action-row{display:flex;gap:10px;justify-content:flex-end;margin-bottom:1rem}
+button{font-family:'Nunito',sans-serif;font-size:15px;font-weight:600;padding:9px 22px;border-radius:6px;cursor:pointer;transition:all 0.15s;border:1.5px solid var(--ink-4);background:transparent;color:var(--ink-2)}
+button:hover{background:var(--paper-2);border-color:var(--ink-3)}
+button.primary{background:var(--accent);border-color:var(--accent);color:white}
+button.primary:hover{background:#0f6e56;border-color:#0f6e56}
+
+.nav-link{font-size:12px;font-weight:700;color:var(--accent);text-decoration:none;letter-spacing:0.02em}
+.nav-link:hover{text-decoration:underline}
+
+/* LIFTING */
+.lifting-section{margin-top:1.5rem}
+.sync-note{font-size:12px;color:var(--ink-3);margin-bottom:0.9rem;font-style:italic}
+.sync-note.synced{color:var(--accent);font-style:normal;font-weight:600}
+.sync-note.partial{color:#ba7517;font-style:normal;font-weight:600}
+.lifting-divider{border:none;border-top:2px solid var(--ink);margin-bottom:1.25rem}
+.lifting-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+.lifting-day-title{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.06em}
+.empty-mobility{font-size:12px;color:var(--ink-3);font-style:italic;padding:8px 0}
+.lift-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.lift-table th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--ink-3);padding:4px 6px 6px 0;border-bottom:1px solid var(--paper-3);text-align:left}
+.lift-table td{padding:5px 4px 5px 0;border-bottom:1px solid var(--paper-3);vertical-align:middle}
+.lift-table tr:last-child td{border-bottom:none}
+.col-ex{width:30%}.col-set{width:17%}.col-notes{width:19%}
+.ex-inp{font-family:'Nunito',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:transparent;border:none;outline:none;width:100%;padding:2px 0}
+.lbs-inp{font-family:'Nunito',sans-serif;font-size:13px;font-weight:600;color:var(--ink);background:transparent;border:none;border-bottom:1.5px solid var(--ink-4);outline:none;width:40px;padding:2px 0;text-align:center}
+.lbs-inp:focus{border-bottom-color:var(--accent)}
+.reps-inp{font-family:'Nunito',sans-serif;font-size:13px;color:var(--ink-2);background:transparent;border:none;border-bottom:1px dashed var(--ink-4);outline:none;width:32px;padding:2px 0;text-align:center}
+.reps-inp:focus{border-bottom-color:var(--accent)}
+.set-unit{font-size:11px;color:var(--ink-4)}
+.set-top{display:flex;align-items:baseline;gap:3px;margin-bottom:3px}
+.set-bot{display:flex;align-items:baseline;gap:3px}
+.tog-btn{font-family:'Nunito',sans-serif;font-size:10px;color:var(--ink-3);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px;margin-left:4px}
+.tog-btn:hover{color:var(--accent)}
+.notes-inp{font-family:'Nunito',sans-serif;font-size:12px;color:var(--ink-3);background:transparent;border:none;border-bottom:1px dashed var(--ink-4);outline:none;width:100%;padding:2px 0}
+.overall-wrap{margin-top:1rem}
+.overall-label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--ink-3);margin-bottom:6px}
+.overall-ta{font-family:'Nunito',sans-serif;font-size:14px;color:var(--ink);background:transparent;border:1.5px solid var(--ink-4);border-radius:6px;width:100%;padding:10px 12px;resize:vertical;min-height:64px;outline:none}
+.overall-ta:focus{border-color:var(--accent)}
+
+/* FOOTER */
+.footer-wrap{border-top:1px solid var(--paper-3);padding-top:1rem;margin-top:1rem;display:flex;flex-direction:column;gap:6px}
+.footer-note{font-size:13px;color:var(--ink-4);text-align:center}
+.footer-quote{font-size:13px;font-style:italic;color:var(--ink-3);line-height:1.5;text-align:center}
+.quote-author{font-size:12px;font-style:normal;font-weight:600;color:var(--ink-4);margin-left:8px}
+
+/* PRINT */
+@media print {
+  @page{size:letter landscape;margin:0.3in 0.35in}
+  body{padding:0;background:white;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:100%}
+  .action-row,.val-msg,.mantra,.session-grid,.two-col,.tog-btn,.commute-btn,.nav-link,.sync-note{display:none!important}
+  .masthead{margin-bottom:0.35rem;padding-bottom:0.3rem}
+  .masthead h1{font-size:13px}
+  .meta-input,.week-input{font-size:11px}
+  .section-title{display:none}
+  .week-grid{gap:3px;margin-bottom:0.35rem;page-break-inside:avoid;break-inside:avoid}
+  .day-cell{min-height:52px;border:1.5px solid var(--ink-3)}
+  .day-cell.is-sunday{border:1.5px solid var(--ink-3)}
+  .day-hdr{padding:2px 4px;font-size:9px;background:transparent}
+  .is-sunday .day-hdr{color:var(--ink-3)}
+  .day-body{padding:3px 4px;min-height:42px}
+  .pick-label{display:none}
+  .day-sel{font-size:11px;border:none;background:transparent;padding:1px 0}
+  .day-sel.levelup{font-size:12px;border:none;padding:1px 0}
+  .summary-bar{padding:4px 8px;margin-bottom:0.35rem;page-break-inside:avoid;break-inside:avoid;border:1px solid #ccc}
+  .sum-val{font-size:14px}
+  .sum-lbl{font-size:8px}
+  .sum-div{height:18px}
+  .lifting-section{margin-top:0.35rem}
+  .lifting-divider{margin-bottom:0.35rem}
+  .lifting-grid{gap:0.6rem;page-break-inside:avoid;break-inside:avoid}
+  .lifting-day-title{font-size:10px;margin-bottom:0.2rem}
+  .col-ex{width:36%}
+  .col-notes{width:10%}
+  .lift-table th{font-size:7.5px;padding:1px 2px 2px 0}
+  .lift-table td{padding:2px 2px 2px 0}
+  .ex-inp{font-size:8.5px;border:none}
+  .lbs-inp{font-size:8.5px;width:24px;border:none;border-bottom:0.5px solid #ccc}
+  .reps-inp{font-size:8.5px;width:20px;border:none;border-bottom:0.5px solid #ccc}
+  .set-unit{font-size:7px}
+  .notes-inp{font-size:8.5px;border:none;border-bottom:0.5px solid #ccc}
+  .empty-mobility{font-size:8px;padding:2px 0}
+  .overall-wrap{margin-top:0.35rem}
+  .overall-label{font-size:9px;margin-bottom:2px}
+  .overall-ta{border:none;border-bottom:0.5px solid #ccc;min-height:20px;font-size:9px;resize:none;border-radius:0;padding:2px 0}
+  .footer-wrap{border-top:none;padding-top:0.25rem;margin-top:0.25rem}
+  .footer-note{display:none}
+  .footer-quote{display:block;font-size:9px;color:#555}
+  .quote-author{font-size:9px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- MASTHEAD -->
+<div class="masthead">
+  <div>
+    <h1>Sunday Night Planning Card</h1>
+    <div class="meta-row">
+      <span class="meta-label">Block</span>
+      <input class="meta-input" id="blockNum" type="text" placeholder="2" />
+      <span class="meta-label">Phase</span>
+      <input class="meta-input" id="phaseNum" type="text" placeholder="1" />
+    </div>
+  </div>
+  <div class="week-wrap">
+    <label class="week-label" for="weekOf">Week</label>
+    <input class="week-input" id="weekOf" type="text" placeholder="Jun 1, 2026" />
+    <div style="margin-top:8px"><a href="./index.html" class="nav-link">🏋 Open Iron Log →</a></div>
+  </div>
+</div>
+
+<!-- INSTRUCTIONS -->
+<div class="two-col">
+  <div>
+    <p class="section-title">5 Steps — In Order</p>
+    <ul class="step-list">
+      <li><span class="step-num">01</span>Check schedule — mark commute days using the ⇄ button</li>
+      <li><span class="step-num">02</span>Place your cardio for the week — swim or elliptical, any day, including Sunday if you want</li>
+      <li><span class="step-num">03</span>Place upper and lower lifting — no back-to-back days</li>
+      <li><span class="step-num">04</span>Fill in Core Toning and Mobility for the week</li>
+      <li><span class="step-num">05</span>Add a Level Up option for each day, then confirm 1 rest day</li>
+    </ul>
+  </div>
+  <div>
+    <p class="section-title">Non-Negotiable Rules</p>
+    <div class="rules-box">
+      <div class="rule-item"><div class="rule-dot"></div>Upper + lower lifting: at least 1 day apart</div>
+      <div class="rule-item"><div class="rule-dot"></div>Commute day = walk at lunch, or home treadmill</div>
+      <div class="rule-item"><div class="rule-dot"></div>1 real rest day minimum every week</div>
+      <div class="rule-item"><div class="rule-dot"></div>If sessions don't fit, drop cardio first</div>
+      <div class="rule-item"><div class="rule-dot"></div>Cardio ceiling: decide the night before, not morning</div>
+    </div>
+  </div>
+</div>
+
+<!-- SESSION MENU -->
+<p class="section-title">Session Menu — Place All 7 This Week</p>
+<div class="session-grid">
+  <div class="chip c-swim"><div><div class="chip-name">Swim</div></div><div class="chip-count">×3</div></div>
+  <div class="chip c-ellip"><div><div class="chip-name">Elliptical</div></div><div class="chip-count">×3</div></div>
+  <div class="chip c-lift"><div><div class="chip-name">Upper lifting</div></div><div class="chip-count">×1</div></div>
+  <div class="chip c-lift"><div><div class="chip-name">Lower lifting</div></div><div class="chip-count">×1</div></div>
+  <div class="chip c-core"><div><div class="chip-name">Core Toning</div></div><div class="chip-count">×1</div></div>
+  <div class="chip c-mob"><div><div class="chip-name">Mobility + Swim or Elliptical</div></div><div class="chip-count">×1</div></div>
+  <div class="chip c-walk"><div><div class="chip-name">Walking</div></div><div class="chip-count">flex</div></div>
+  <div class="chip c-tread"><div><div class="chip-name">Treadmill</div></div><div class="chip-count">flex</div></div>
+</div>
+
+<!-- WEEK GRID -->
+<p class="section-title">Place Your Week — Primary + Level Up For Each Day</p>
+<div class="week-grid" id="weekGrid"></div>
+
+<!-- SUMMARY -->
+<div class="summary-bar">
+  <div class="sum-item"><div class="sum-val" id="sv-upper">0</div><div class="sum-lbl">Upper</div></div>
+  <div class="sum-div"></div>
+  <div class="sum-item"><div class="sum-val" id="sv-lower">0</div><div class="sum-lbl">Lower</div></div>
+  <div class="sum-div"></div>
+  <div class="sum-item"><div class="sum-val" id="sv-core">0</div><div class="sum-lbl">Core</div></div>
+  <div class="sum-div"></div>
+  <div class="sum-item"><div class="sum-val" id="sv-mob">0</div><div class="sum-lbl">Mobility</div></div>
+  <div class="sum-div"></div>
+  <div class="sum-item"><div class="sum-val" id="sv-rest">0</div><div class="sum-lbl">Rest</div></div>
+</div>
+
+<div class="val-msg" id="valMsg"></div>
+
+<div class="mantra">"If I had to do this again tomorrow, would I be okay with that?" — the Tomorrow Test. Set your cardio ceiling tonight, not mid-session.</div>
+
+<div class="action-row">
+  <button onclick="clearAll()">Clear</button>
+  <button onclick="checkPlan()">Check plan</button>
+  <button class="primary" onclick="window.print()">Download / Print</button>
+</div>
+
+<!-- LIFTING -->
+<div class="lifting-section">
+  <hr class="lifting-divider">
+  <p class="sync-note" id="syncNote"></p>
+  <div class="lifting-grid">
+    <div>
+      <p class="lifting-day-title">Upper Lifting</p>
+      <table class="lift-table">
+        <thead><tr><th class="col-ex">Exercise</th><th class="col-set">Set 1</th><th class="col-set">Set 2</th><th class="col-set">Set 3</th><th class="col-notes">Notes</th></tr></thead>
+        <tbody id="upper-tbody"></tbody>
+      </table>
+    </div>
+    <div>
+      <p class="lifting-day-title">Lower Lifting</p>
+      <table class="lift-table">
+        <thead><tr><th class="col-ex">Exercise</th><th class="col-set">Set 1</th><th class="col-set">Set 2</th><th class="col-set">Set 3</th><th class="col-notes">Notes</th></tr></thead>
+        <tbody id="lower-tbody"></tbody>
+      </table>
+    </div>
+    <div>
+      <p class="lifting-day-title">Mobility</p>
+      <table class="lift-table">
+        <thead><tr><th class="col-ex">Exercise</th><th class="col-set">Set 1</th><th class="col-set">Set 2</th><th class="col-set">Set 3</th><th class="col-notes">Notes</th></tr></thead>
+        <tbody id="mobility-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="overall-wrap">
+    <p class="overall-label">Overall Notes</p>
+    <textarea class="overall-ta" placeholder="How did the week go? Any adjustments needed?"></textarea>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer-wrap">
+  <p class="footer-note" id="footerNote">Block 2 · Phase 1 · starting weight 253 lbs · weekly weigh-in Sunday morning</p>
+  <p class="footer-quote"><span id="quoteText">Loading quote...</span><span class="quote-author" id="quoteAuthor"></span></p>
+</div>
+
+</div><!-- end .page -->
+
+<script>
+// ── DATA ────────────────────────────────────────────────────────────────────
+
+const PRIMARY_OPTS = [
+  {value:'',label:'— pick —'},
+  {value:'swim',label:'Swim'},
+  {value:'ellip',label:'Elliptical'},
+  {value:'upper',label:'Upper lifting'},
+  {value:'lower',label:'Lower lifting'},
+  {value:'fullbody',label:'Full Body'},
+  {value:'core',label:'Core Toning'},
+  {value:'mob',label:'Mobility'},
+  {value:'pilates',label:'Pilates'},
+  {value:'cardio-class',label:'Cardio Class'},
+  {value:'walk',label:'Walking'},
+  {value:'treadmill',label:'Treadmill'},
+  {value:'rest',label:'Rest'},
+];
+
+const COMMUTE_OPTS = [
+  {value:'walk-lunch',label:'Walk at lunch'},
+  {value:'treadmill',label:'Home treadmill'},
+];
+
+const LEVELUP_OPTS = [
+  {value:'',label:'— Level Up —'},
+  {value:'lu-swim',label:'Swim'},
+  {value:'lu-ellip',label:'Elliptical'},
+  {value:'lu-dance',label:'Dance'},
+  {value:'lu-yoga',label:'Yoga'},
+  {value:'lu-meditation',label:'Meditation'},
+  {value:'lu-pilates',label:'Pilates'},
+  {value:'lu-walk',label:'Walking'},
+  {value:'lu-treadmill',label:'Treadmill'},
+  {value:'lu-aquafit',label:'Aquafit'},
+  {value:'lu-cooldown',label:'Mindful Cooldown'},
+  {value:'lu-rest',label:'Just rest!'},
+];
+
+const DAYS = [
+  {id:'mon',label:'Mon'},
+  {id:'tue',label:'Tue'},
+  {id:'wed',label:'Wed'},
+  {id:'thu',label:'Thu'},
+  {id:'fri',label:'Fri'},
+  {id:'sat',label:'Sat'},
+  {id:'sun',label:'Sun'},
+];
+
+// Fallback defaults — used only if no Iron Log library is found on this device
+const DEFAULT_UPPER_EX = [
+  ['Machine Lat Pulldown',   '65','10','70','10','75','8', false],
+  ['Machine Inner Chest Press','50','10','55','10','60','8', false],
+  ['Leverage Machine High Row','45','10','50','10','55','8', false],
+  ['DB Hammer Curl',         '15','10','15','10','15','8', false],
+  ['DB Overhead Tricep Ext', '20','10','20','10','20','8', false],
+  ['Band Pull-Apart',        'Light','15','Light','15','Light','15', false],
+];
+
+const DEFAULT_LOWER_EX = [
+  ['Machine Leg Press',      '110','10','120','10','125','8', false],
+  ['Machine Seated Leg Curl','65','10','70','10','75','8',  false],
+  ['Machine Hip Abduction',  '140','20','145','20','150','20', false],
+  ['DB Suitcase Carry',      '25','30s','25','30s','25','30s', true],
+  ['Back Hyperextension',    'BW','10','BW','10','BW','8',  false],
+];
+
+// ── IRON LOG SYNC ────────────────────────────────────────────────────────────
+// Reads the same exercise library Iron Log saves to, so this card always
+// opens with your current exercises + latest progressed weights. Reps default
+// to a 10/10/8 pattern (editable, same as always) since Iron Log only tracks
+// weight targets, not per-set rep splits.
+//
+// This also pulls directly from the same shared Netlify store Iron Log syncs
+// to, rather than only trusting whatever's cached in this browser — so the
+// planner shows current data even on a device where Iron Log itself hasn't
+// been opened recently.
+
+const IRON_LOG_KEY = 'iron-log-library';
+const IRON_LOG_REMOTE = '/api/data';
+
+function loadIronLogLibrary() {
+  try {
+    const raw = localStorage.getItem(IRON_LOG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function refreshFromRemote() {
+  try {
+    const res = await fetch(IRON_LOG_REMOTE, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const remote = await res.json();
+    if (remote && remote.library) {
+      localStorage.setItem(IRON_LOG_KEY, JSON.stringify(remote.library));
+      if (remote.logs) localStorage.setItem('iron-log-logs', JSON.stringify(remote.logs));
+      if (remote.bank) localStorage.setItem('iron-log-bank', JSON.stringify(remote.bank));
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+function exToRow(ex) {
+  const w = (ex.weights && ex.weights.length === 3) ? ex.weights : [ex.weights?.[0]||0, ex.weights?.[1]||0, ex.weights?.[2]||0];
+  return [ex.name, String(w[0]), '10', String(w[1]), '10', String(w[2]), '8', false];
+}
+
+function getLiftingData() {
+  const lib = loadIronLogLibrary();
+  const hasUpper = lib && Array.isArray(lib.upper) && lib.upper.length > 0;
+  const hasLower = lib && Array.isArray(lib.lower) && lib.lower.length > 0;
+  const hasMobility = lib && Array.isArray(lib.mobility) && lib.mobility.length > 0;
+  return {
+    upper: hasUpper ? lib.upper.map(exToRow) : DEFAULT_UPPER_EX,
+    lower: hasLower ? lib.lower.map(exToRow) : DEFAULT_LOWER_EX,
+    mobility: hasMobility ? lib.mobility.map(exToRow) : [],
+    hasUpper,
+    hasLower,
+    hasMobility,
+  };
+}
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+
+const sel = {};
+const commute = new Set();
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+function makeOpts(opts, current) {
+  return opts.map(o => `<option value="${o.value}"${o.value===current?' selected':''}>${o.label}</option>`).join('');
+}
+
+function setCell(lbs, reps, uid, isTime) {
+  const showReps = isTime ? 'none' : 'inline-block';
+  const showTime = isTime ? 'inline-block' : 'none';
+  const unit = isTime ? 'sec' : 'reps';
+  const tog = isTime ? '↺ reps' : '↺ time';
+  return `<div>
+    <div class="set-top"><input class="lbs-inp" value="${lbs}" /><span class="set-unit">lbs</span></div>
+    <div class="set-bot">
+      <input class="reps-inp" data-uid="${uid}" data-type="reps" value="${isTime?'':reps}" style="display:${showReps}" />
+      <input class="reps-inp" data-uid="${uid}" data-type="time" value="${isTime?reps:''}" style="display:${showTime}" />
+      <span class="set-unit" data-uid="${uid}" data-role="unit">${unit}</span>
+      <button class="tog-btn" onclick="toggleUnit('${uid}',this)">${tog}</button>
+    </div>
+  </div>`;
+}
+
+function toggleUnit(uid, btn) {
+  const allReps = document.querySelectorAll(`[data-uid="${uid}"][data-type="reps"]`);
+  const allTime = document.querySelectorAll(`[data-uid="${uid}"][data-type="time"]`);
+  const units   = document.querySelectorAll(`[data-uid="${uid}"][data-role="unit"]`);
+  const togs    = document.querySelectorAll(`.tog-btn`);
+  const isReps  = allReps[0] && allReps[0].style.display !== 'none';
+  allReps.forEach(el => el.style.display = isReps ? 'none' : 'inline-block');
+  allTime.forEach(el => el.style.display = isReps ? 'inline-block' : 'none');
+  units.forEach(el => el.textContent = isReps ? 'sec' : 'reps');
+  btn.textContent = isReps ? '↺ reps' : '↺ time';
+}
+
+// ── BUILD WEEK GRID ──────────────────────────────────────────────────────────
+
+function buildGrid() {
+  const grid = document.getElementById('weekGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  DAYS.forEach(function(day) {
+    const isSun = day.id === 'sun';
+    const isCom = commute.has(day.id);
+    const cell  = document.createElement('div');
+    cell.className = 'day-cell' + (isSun ? ' is-sunday' : '') + (isCom ? ' is-commute' : '');
+    cell.id = 'cell-' + day.id;
+
+    const togBtn = `<button class="commute-btn" onclick="toggleCommute('${day.id}')" title="Toggle commute">⇄</button>`;
+    const hdrTxt = isCom ? day.label + ' ✕' : day.label;
+
+    let body = '';
+    if (isCom) {
+      const cv = (sel[day.id] && sel[day.id].commute) || 'walk-lunch';
+      body = `<div class="commute-note">Commute day</div>
+        <select class="commute-sel" onchange="onCommutePick('${day.id}', this.value)">${makeOpts(COMMUTE_OPTS, cv)}</select>
+        <div style="font-size:12px;color:var(--ink-3);margin-top:4px">No morning session</div>`;
+    } else {
+      const pv = (sel[day.id] && sel[day.id].primary) || '';
+      const lv = (sel[day.id] && sel[day.id].levelup) || '';
+      body = `<div class="pick-label">Primary</div>
+        <select class="day-sel" onchange="onPick('${day.id}','primary',this.value)">${makeOpts(PRIMARY_OPTS, pv)}</select>
+        <div class="pick-label">Level Up</div>
+        <select class="day-sel levelup" onchange="onPick('${day.id}','levelup',this.value)">${makeOpts(LEVELUP_OPTS, lv)}</select>`;
+    }
+
+    cell.innerHTML = `<div class="day-hdr">${hdrTxt}${togBtn}</div><div class="day-body">${body}</div>`;
+    grid.appendChild(cell);
+  });
+}
+
+function onPick(dayId, slot, value) {
+  if (!sel[dayId]) sel[dayId] = {primary:'', levelup:''};
+  sel[dayId][slot] = value;
+  updateSummary();
+}
+
+function toggleCommute(dayId) {
+  if (!sel[dayId]) sel[dayId] = {primary:'', levelup:'', commute:'walk-lunch'};
+  if (commute.has(dayId)) {
+    commute.delete(dayId);
+  } else {
+    commute.add(dayId);
+    sel[dayId] = {primary:'', levelup:'', commute:'walk-lunch'};
+  }
+  buildGrid();
+  updateSummary();
+}
+
+function onCommutePick(dayId, value) {
+  if (!sel[dayId]) sel[dayId] = {primary:'', levelup:'', commute:'walk-lunch'};
+  sel[dayId].commute = value;
+}
+
+// ── SUMMARY ──────────────────────────────────────────────────────────────────
+
+function updateSummary() {
+  const counts = {upper:0, lower:0, core:0, mob:0, rest:0};
+  const targets = {upper:1, lower:1, core:1, mob:1, rest:1};
+  DAYS.forEach(function(day) {
+    if (commute.has(day.id)) return;
+    const v = sel[day.id] && sel[day.id].primary;
+    if (!v) return;
+    if (counts[v] !== undefined) { counts[v]++; }
+  });
+  Object.keys(counts).forEach(function(k) {
+    const el = document.getElementById('sv-' + k);
+    if (!el) return;
+    el.textContent = counts[k];
+    el.className = 'sum-val' + (counts[k] === targets[k] ? ' good' : counts[k] > (targets[k]||1) ? ' bad' : counts[k] > 0 ? ' warn' : '');
+  });
+}
+
+// ── VALIDATE ─────────────────────────────────────────────────────────────────
+
+function checkPlan() {
+  const errors = [];
+  const counts = {swim:0, ellip:0, upper:0, lower:0, core:0, mob:0, rest:0};
+  DAYS.forEach(function(day) {
+    if (commute.has(day.id)) return;
+    const v = sel[day.id] && sel[day.id].primary;
+    if (!v) return;
+    if (counts[v] !== undefined) counts[v]++;
+  });
+  if (counts.upper !== 1) errors.push('Upper lifting: need 1, have ' + counts.upper);
+  if (counts.lower !== 1) errors.push('Lower lifting: need 1, have ' + counts.lower);
+  if (counts.core  !== 1) errors.push('Core Toning: need 1, have ' + counts.core);
+  if (counts.mob   !== 1) errors.push('Mobility: need 1, have ' + counts.mob);
+  if (counts.rest  <  1) errors.push('Need at least 1 true rest day');
+  // back-to-back check
+  for (var i = 0; i < DAYS.length - 1; i++) {
+    const a = sel[DAYS[i].id]   && sel[DAYS[i].id].primary;
+    const b = sel[DAYS[i+1].id] && sel[DAYS[i+1].id].primary;
+    if ((a==='upper'||a==='lower') && (b==='upper'||b==='lower')) {
+      errors.push('Back-to-back lifting on ' + DAYS[i].label + ' + ' + DAYS[i+1].label);
+    }
+  }
+  // level up check
+  DAYS.forEach(function(day) {
+    if (commute.has(day.id)) return;
+    const p = sel[day.id] && sel[day.id].primary;
+    const l = sel[day.id] && sel[day.id].levelup;
+    if (p && !l) errors.push(day.label + ': no Level Up set');
+  });
+  const msg = document.getElementById('valMsg');
+  msg.style.display = 'block';
+  if (errors.length === 0) {
+    msg.className = 'val-msg success';
+    msg.textContent = '✓ Plan looks good — all sessions placed and Level Up options set. Week is locked. Get some sleep.';
+  } else {
+    msg.className = 'val-msg error';
+    msg.innerHTML = errors.map(function(e){return '· '+e}).join('<br>');
+  }
+}
+
+// ── CLEAR ────────────────────────────────────────────────────────────────────
+
+function clearAll() {
+  DAYS.forEach(function(d){ sel[d.id] = {primary:'', levelup:'', commute:'walk-lunch'}; });
+  commute.clear();
+  buildGrid();
+  updateSummary();
+  document.getElementById('valMsg').style.display = 'none';
+}
+
+// ── LIFTING TABLES ────────────────────────────────────────────────────────────
+
+function buildLiftingTables() {
+  var upperBody = document.getElementById('upper-tbody');
+  var lowerBody = document.getElementById('lower-tbody');
+  var mobilityBody = document.getElementById('mobility-tbody');
+  if (!upperBody || !lowerBody) return;
+
+  var data = getLiftingData();
+
+  function rowsHtml(rows, prefix) {
+    return rows.map(function(ex, i) {
+      return '<tr>' +
+        '<td><input class="ex-inp" type="text" value="' + ex[0] + '" /></td>' +
+        '<td>' + setCell(ex[1], ex[2], prefix+i+'s1', ex[7]) + '</td>' +
+        '<td>' + setCell(ex[3], ex[4], prefix+i+'s2', ex[7]) + '</td>' +
+        '<td>' + setCell(ex[5], ex[6], prefix+i+'s3', ex[7]) + '</td>' +
+        '<td><input class="notes-inp" type="text" /></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  upperBody.innerHTML = rowsHtml(data.upper, 'u');
+  lowerBody.innerHTML = rowsHtml(data.lower, 'l');
+  if (mobilityBody) {
+    mobilityBody.innerHTML = data.mobility.length
+      ? rowsHtml(data.mobility, 'm')
+      : '<tr><td colspan="5" class="empty-mobility">No mobility exercises added in Iron Log yet.</td></tr>';
+  }
+
+  var syncNote = document.getElementById('syncNote');
+  if (syncNote) {
+    var checks = [
+      { has: data.hasUpper, label: 'Upper' },
+      { has: data.hasLower, label: 'Lower' },
+      { has: data.hasMobility, label: 'Mobility' },
+    ];
+    var synced = checks.filter(function(c){ return c.has; });
+    var missing = checks.filter(function(c){ return !c.has; });
+    var text, cls;
+    if (missing.length === 0) {
+      text = '✓ Synced from Iron Log — weights below are your current progressed numbers, edit freely for this week.';
+      cls = 'synced';
+    } else if (synced.length === 0) {
+      text = 'Using saved defaults — add exercises in Iron Log, then reopen this planner to sync live weights.';
+      cls = '';
+    } else {
+      var missingLabels = missing.map(function(c){ return c.label; }).join(', ');
+      text = '⚠ Partially synced — ' + missingLabels + ' still showing defaults/empty (no exercises found yet for ' + missingLabels.toLowerCase() + ').';
+      cls = 'partial';
+    }
+    syncNote.textContent = text;
+    syncNote.className = 'sync-note' + (cls ? ' ' + cls : '');
+  }
+}
+
+// ── FOOTER UPDATE ─────────────────────────────────────────────────────────────
+
+function updateFooter() {
+  var b = document.getElementById('blockNum').value || '2';
+  var p = document.getElementById('phaseNum').value || '1';
+  var fn = document.getElementById('footerNote');
+  if (fn) fn.textContent = 'Block ' + b + ' · Phase ' + p + ' · starting weight 253 lbs · weekly weigh-in Sunday morning';
+}
+document.addEventListener('input', function(e) {
+  if (e.target.id === 'blockNum' || e.target.id === 'phaseNum') updateFooter();
+});
+
+// ── QUOTE ─────────────────────────────────────────────────────────────────────
+
+var FALLBACKS = [
+  {q:'The secret of getting ahead is getting started.',a:'Mark Twain'},
+  {q:'It does not matter how slowly you go as long as you do not stop.',a:'Confucius'},
+  {q:'Success is the sum of small efforts repeated day in and day out.',a:'Robert Collier'},
+  {q:"Take care of your body. It's the only place you have to live.",a:'Jim Rohn'},
+  {q:'Motivation is what gets you started. Habit is what keeps you going.',a:'Jim Ryun'},
+  {q:"Your body can stand almost anything. It's your mind you have to convince.",a:'Unknown'},
+  {q:'Progress, not perfection.',a:'Unknown'},
+  {q:'The groundwork for all happiness is good health.',a:'Leigh Hunt'},
+];
+
+function showFallback() {
+  var pick = FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)];
+  document.getElementById('quoteText').textContent = '"' + pick.q + '"';
+  document.getElementById('quoteAuthor').textContent = ' — ' + pick.a;
+}
+
+function loadQuote() {
+  showFallback();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+
+DAYS.forEach(function(d){ sel[d.id] = {primary:'', levelup:'', commute:'walk-lunch'}; });
+buildGrid();
+updateSummary();
+buildLiftingTables(); // instant render from whatever's cached, then refresh below
+loadQuote();
+
+refreshFromRemote().then(function(updated) {
+  if (updated) buildLiftingTables(); // rebuild with the freshly-pulled data
+});
+
+</script>
+</body>
+</html>

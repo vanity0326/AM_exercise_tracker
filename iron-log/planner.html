@@ -199,7 +199,7 @@ button.primary:hover{background:#0f6e56;border-color:#0f6e56}
   <div class="week-wrap">
     <label class="week-label" for="weekOf">Week</label>
     <input class="week-input" id="weekOf" type="text" placeholder="Jun 1, 2026" />
-    <div style="margin-top:8px"><a href="./index.html" class="nav-link">🏋 Open Iron Log →</a></div>
+    <div style="margin-top:8px"><a href="./index.html" class="nav-link">🏋 Open Tracker →</a></div>
   </div>
 </div>
 
@@ -632,7 +632,7 @@ function buildLiftingTables() {
   if (mobilityBody) {
     mobilityBody.innerHTML = data.mobility.length
       ? rowsHtml(data.mobility, 'm')
-      : '<tr><td colspan="5" class="empty-mobility">No mobility exercises added in Iron Log yet.</td></tr>';
+      : '<tr><td colspan="5" class="empty-mobility">No mobility exercises added in the tracker yet.</td></tr>';
   }
 
   var syncNote = document.getElementById('syncNote');
@@ -646,10 +646,10 @@ function buildLiftingTables() {
     var missing = checks.filter(function(c){ return !c.has; });
     var text, cls;
     if (missing.length === 0) {
-      text = '✓ Synced from Iron Log — weights below are your current progressed numbers, edit freely for this week.';
+      text = '✓ Synced from the tracker — weights below are your current progressed numbers, edit freely for this week.';
       cls = 'synced';
     } else if (synced.length === 0) {
-      text = 'Using saved defaults — add exercises in Iron Log, then reopen this planner to sync live weights.';
+      text = 'Using saved defaults — add exercises in the tracker, then reopen this planner to sync live weights.';
       cls = '';
     } else {
       var missingLabels = missing.map(function(c){ return c.label; }).join(', ');

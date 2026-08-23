@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v29";
+const APP_VERSION = "v30";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -353,8 +353,8 @@ function renderHeader() {
     <div class="header">
       <div class="header-top">
         <div>
-          <div class="title">IRON LOG</div>
-          <div class="subtitle">Block 2 · Systems Builder · ${APP_VERSION}</div>
+          <div class="title">TONI'S TOTAL TRAINING TRACKER</div>
+          <div class="subtitle">${APP_VERSION}</div>
         </div>
         <div class="sync-badge ${s.cls}" id="syncBadge">${s.text}</div>
       </div>
@@ -503,7 +503,7 @@ function renderToday() {
   }
   wrap.appendChild(actionRow);
 
-  wrap.appendChild(renderFinisherSection(current.id, todayLog));
+  wrap.appendChild(renderFinisherSection(current.id, todayLog, tabCursor));
 
   return wrap;
 }
@@ -511,14 +511,18 @@ function renderToday() {
 // A finisher list works exactly like a primary day's exercises — same
 // cards, same Add Exercise modal (bank included), same edit/delete/circuit
 // grouping — just stored under its own key and shown in a separate section.
-function renderFinisherSection(dayId, todayLog) {
+// sharedTabCursor continues the SAME tabindex sequence as the primary list
+// above it — using a fresh cursor here would hand out duplicate tabindex
+// values, and the browser resolves duplicates by jumping to whichever one
+// comes first in the DOM (i.e. back up to the primary list).
+function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
   const wrap = document.createElement("div");
   const fKey = finisherKey(dayId);
   const finisherExercises = library[fKey] || [];
 
   if (finisherExercises.length > 0) {
     wrap.appendChild(el(`<div class="finisher-heading">🏃 Cardio Finisher</div>`));
-    const tabCursor = makeTabCursor();
+    const tabCursor = sharedTabCursor || makeTabCursor();
     const plan = buildRenderPlan(finisherExercises);
     plan.forEach((item) => {
       if (item.type === "solo") {

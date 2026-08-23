@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v31";
+const APP_VERSION = "v33";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -57,6 +57,7 @@ const TRACK_TYPES = {
   hr_zones: { label: "Heart Rate Zones (Z1–Z4 minutes)" },
 };
 function exUnitLabel(ex) {
+  if (ex.customUnit) return ex.customUnit;
   if (ex.trackType === "time") return "sec";
   if (ex.trackType === "duration" || ex.trackType === "hr_zones") return "min";
   return "reps";
@@ -93,11 +94,14 @@ function defaultTargets(trackType, n) {
 function targetLabelFor(ex) {
   const n = exNumSets(ex);
   const vals = Array.from({ length: n }, (_, i) => targetForSet(ex, i));
-  const suffix = ex.trackType === "time" ? "s" : (ex.trackType === "duration" || ex.trackType === "hr_zones") ? "min" : "";
   if (isZoneTracked(ex)) {
     const total = vals.reduce((sum, v) => sum + v, 0);
-    return vals.map((v, i) => `Z${i + 1}: ${v}${suffix}`).join(" / ") + ` (Total: ${total} min)`;
+    return vals.map((v, i) => `Z${i + 1}: ${v}min`).join(" / ") + ` (Total: ${total} min)`;
   }
+  const suffix = ex.customUnit ? ` ${ex.customUnit}`
+    : ex.trackType === "time" ? "s"
+    : ex.trackType === "duration" ? " min"
+    : "";
   if (vals.every((v) => v === vals[0])) return `${vals[0]}${suffix} · all ${n} set${n === 1 ? "" : "s"}`;
   return vals.map((v) => `${v}${suffix}`).join(" / ");
 }
@@ -177,6 +181,7 @@ function upsertBank(ex) {
     trackType: ex.trackType || "weight",
     weights: ex.weights ? [...ex.weights] : [20, 20, 20],
     targets: Array.isArray(ex.targets) ? [...ex.targets] : null,
+    customUnit: ex.customUnit || null,
   };
   saveBank(bank);
 }
@@ -699,7 +704,7 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   const n = sets.length;
   const setRow = el(`<div class="set-row"></div>`);
   sets.forEach((s, i) => {
-    const topLabel = isWeighted ? "lbs" : zoneTracked ? `Zone ${i + 1}` : unit === "sec" ? "hold" : unit === "min" ? "time" : "BW";
+    const topLabel = isWeighted ? "lbs" : zoneTracked ? `Zone ${i + 1}` : ex.customUnit ? ex.customUnit : unit === "sec" ? "hold" : unit === "min" ? "time" : "BW";
     const col = el(`
       <div class="set-col">
         ${isWeighted ? `<label>${topLabel}</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${topLabel}</label>`}
@@ -866,7 +871,7 @@ function updateSet(exId, idx, field, value) {
   saveLogs(logs);
 
   if (field === "weight" && ex.trackType === "weight") {
-    upsertBank({ name: ex.name, type: ex.type, trackType: ex.trackType, weights: newSets.map((s) => s.weight), targets: ex.targets });
+    upsertBank({ name: ex.name, type: ex.type, trackType: ex.trackType, weights: newSets.map((s) => s.weight), targets: ex.targets, customUnit: ex.customUnit });
   }
 
   refreshExerciseCard(exId, newSets);
@@ -938,7 +943,7 @@ function renderHistory() {
       const setStr = entry.sets.map((s, i) => {
         if (s.reps == null) return "–";
         const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
-        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${prefix}${s.reps}${unit === "sec" ? "s" : unit === "min" ? " min" : " reps"}`;
+        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${prefix}${s.reps}${unit === "sec" ? "s" : " " + unit}`;
       }).join(", ");
       card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}</div>`));
     });
@@ -1169,7 +1174,8 @@ function renderProgress() {
   const currentEx = exMap[state.progressExId];
   const isWeighted = currentEx && currentEx.trackType === "weight";
   const zoneTracked = currentEx && isZoneTracked(currentEx);
-  const metricLabel = currentEx && currentEx.trackType === "time" ? "sec held"
+  const metricLabel = currentEx && currentEx.customUnit ? currentEx.customUnit
+    : currentEx && currentEx.trackType === "time" ? "sec held"
     : zoneTracked ? "total min (all zones)"
     : currentEx && currentEx.trackType === "duration" ? "min"
     : isWeighted ? "lbs" : "reps";
@@ -1422,6 +1428,7 @@ function openImportModal() {
       const targets = Array.isArray(item.targets) && item.targets.length >= 1
         ? item.targets.map((t) => Number(t) || 0)
         : defaultTargets(trackType, numSets);
+      const customUnit = item.customUnit || null;
 
       if (!name || !validDays.has(day)) { skipped++; return; }
       if (!library[day]) library[day] = [];
@@ -1433,12 +1440,13 @@ function openImportModal() {
         existing.trackType = trackType;
         existing.targets = targets;
         existing.numSets = numSets;
+        existing.customUnit = customUnit;
         updated++;
       } else {
-        library[day].push({ id: slugify(name), name, type, trackType, numSets, weights, targets });
+        library[day].push({ id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit });
         added++;
       }
-      upsertBank({ name, type, trackType, weights, targets });
+      upsertBank({ name, type, trackType, weights, targets, customUnit });
     });
 
     saveLibrary(library);
@@ -1481,6 +1489,11 @@ function openBankManagerModal(onClose) {
     <div class="modal">
       <h3>Manage Exercise Bank</h3>
       <div class="field-hint" style="margin-bottom:14px;">Removing something here only affects this quick-pick list — it won't touch exercises already placed on any day, or any logged history.</div>
+      <div class="modal-actions" style="margin-bottom:16px;">
+        <button class="btn-secondary" id="bank-export-btn" style="flex:1">⬇ Export Backup</button>
+        <button class="btn-secondary" id="bank-import-btn" style="flex:1">⬆ Restore Backup</button>
+      </div>
+      <input type="file" id="bank-import-file" accept="application/json" style="display:none" />
       <div id="bank-manager-list"></div>
       <div class="modal-actions">
         <button class="btn-primary" id="bank-manager-close-btn" style="flex:1">Done</button>
@@ -1516,6 +1529,51 @@ function openBankManagerModal(onClose) {
     });
   }
   renderList();
+
+  modal.querySelector("#bank-export-btn").onclick = () => {
+    const entryCount = Object.keys(bank).length;
+    if (entryCount === 0) {
+      alert("Bank is empty — nothing to back up yet.");
+      return;
+    }
+    const data = JSON.stringify(bank, null, 2);
+    downloadFile(data, `bank-backup-${todayISO()}.json`, "application/json");
+  };
+
+  const fileInput = modal.querySelector("#bank-import-file");
+  modal.querySelector("#bank-import-btn").onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (e) {
+        alert("That file doesn't look like a valid backup — couldn't parse it as JSON.");
+        return;
+      }
+      let added = 0, updated = 0, skipped = 0;
+      Object.values(parsed).forEach((entry) => {
+        if (!entry || !entry.name) { skipped++; return; }
+        const key = bankKey(entry.name);
+        if (bank[key]) updated++; else added++;
+        bank[key] = {
+          name: entry.name,
+          type: entry.type || "other",
+          trackType: entry.trackType || "weight",
+          weights: Array.isArray(entry.weights) ? entry.weights : [20, 20, 20],
+          targets: Array.isArray(entry.targets) ? entry.targets : null,
+        };
+      });
+      saveBank(bank);
+      renderList();
+      alert(`Restored: ${added} added, ${updated} updated${skipped ? `, ${skipped} skipped (missing name)` : ""}.`);
+    };
+    reader.readAsText(file);
+    fileInput.value = "";
+  };
 
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) { document.body.removeChild(overlay); if (onClose) onClose(); } };
@@ -1564,6 +1622,10 @@ function openAddExerciseModal(explicitListKey) {
         <label>Number of sets</label>
         <input type="number" id="ex-num-sets" min="1" value="3" style="width:80px" />
       </div>
+      <div class="form-row" id="ex-custom-unit-row">
+        <label>Custom unit label (optional)</label>
+        <input type="text" id="ex-custom-unit" placeholder="e.g. laps, rounds — leave blank for default" />
+      </div>
       <div id="ex-weight-fields">
         <div class="form-row">
           <label>Progression type</label>
@@ -1609,6 +1671,8 @@ function openAddExerciseModal(explicitListKey) {
   const bankSelect = modal.querySelector("#ex-bank");
   const trackSelect = modal.querySelector("#ex-track");
   const weightFields = modal.querySelector("#ex-weight-fields");
+  const customUnitRow = modal.querySelector("#ex-custom-unit-row");
+  const customUnitInput = modal.querySelector("#ex-custom-unit");
 
   const zoneTotalEl = modal.querySelector("#ex-zone-total");
 
@@ -1635,6 +1699,7 @@ function openAddExerciseModal(explicitListKey) {
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
+    customUnitRow.style.display = t === "hr_zones" ? "none" : "";
     targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)"
       : t === "duration" ? "Target duration per set (minutes)"
       : t === "hr_zones" ? "Target minutes per zone"
@@ -1685,6 +1750,7 @@ function openAddExerciseModal(explicitListKey) {
     nameInput.value = entry.name;
     typeSelect.value = entry.type;
     trackSelect.value = entry.trackType || "weight";
+    customUnitInput.value = entry.customUnit || "";
     updateFieldVisibility();
     const n = entry.trackType === "hr_zones" ? 4 : (entry.targets && entry.targets.length) || (entry.weights && entry.weights.length) || 3;
     numSetsInput.value = n;
@@ -1705,8 +1771,9 @@ function openAddExerciseModal(explicitListKey) {
     // A 0-minute zone target is valid — it just means "not planning to spend
     // time here." Only non-zone types need a hard floor of 1.
     const targets = readNumberRow(targetsRow).map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
+    const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
 
-    const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets };
+    const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit };
     if (!library[dayId]) library[dayId] = [];
     library[dayId].push(newEx);
     saveLibrary(library);
@@ -1752,6 +1819,10 @@ function openEditExerciseModal(dayId, exId) {
         <label>Number of sets</label>
         <input type="number" id="edit-num-sets" min="1" style="width:80px" />
       </div>
+      <div class="form-row" id="edit-custom-unit-row">
+        <label>Custom unit label (optional)</label>
+        <input type="text" id="edit-custom-unit" placeholder="e.g. laps, rounds — leave blank for default" />
+      </div>
       <div id="edit-weight-fields">
         <div class="form-row">
           <label>Progression type</label>
@@ -1788,6 +1859,8 @@ function openEditExerciseModal(dayId, exId) {
   const weightsRow = modal.querySelector("#edit-weights-row");
   const targetsRow = modal.querySelector("#edit-targets-row");
   const zoneTotalEl = modal.querySelector("#edit-zone-total");
+  const customUnitRow = modal.querySelector("#edit-custom-unit-row");
+  const customUnitInput = modal.querySelector("#edit-custom-unit");
 
   function labelFnFor(trackType) {
     return trackType === "hr_zones" ? (i) => `Zone ${i + 1}` : (i) => `Set ${i + 1}`;
@@ -1806,6 +1879,7 @@ function openEditExerciseModal(dayId, exId) {
 
   trackSelect.value = ex.trackType || "weight";
   typeSelect.value = ex.type || "other";
+  customUnitInput.value = ex.customUnit || "";
   const n0 = exNumSets(ex);
   numSetsInput.value = n0;
   const w0 = ex.weights && ex.weights.length ? ex.weights : Array(n0).fill(20);
@@ -1815,6 +1889,7 @@ function openEditExerciseModal(dayId, exId) {
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
+    customUnitRow.style.display = t === "hr_zones" ? "none" : "";
     targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)"
       : t === "duration" ? "Target duration per set (minutes)"
       : t === "hr_zones" ? "Target minutes per zone"
@@ -1857,8 +1932,9 @@ function openEditExerciseModal(dayId, exId) {
     // A 0-minute zone target is valid — it just means "not planning to spend
     // time here." Only non-zone types need a hard floor of 1.
     const targets = readNumberRow(targetsRow).map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
+    const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
 
-    Object.assign(ex, { name, trackType, type, numSets, weights, targets });
+    Object.assign(ex, { name, trackType, type, numSets, weights, targets, customUnit });
     saveLibrary(library);
     upsertBank(ex);
 

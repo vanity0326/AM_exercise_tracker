@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v24";
+const APP_VERSION = "v27";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -40,6 +40,7 @@ const DEFAULT_TARGET_MINUTES = 20;
 const BODYWEIGHT_REP_BUMP = 2;
 const TIME_BUMP_SECONDS = 10;
 const DURATION_BUMP_MINUTES = 5;
+const ZONE_BUMP_MINUTES = 5;
 
 // Every exercise has a trackType controlling how it's logged:
 //   weight     — lbs + reps per set (default, e.g. Chest Press)
@@ -266,6 +267,18 @@ function fmtDate(iso) {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+// An entry only counts as "actually logged" if at least one set has a real
+// value — an entry that exists but has every set empty (e.g. from touching
+// a weight box without ever entering reps) is noise, not a workout.
+function entryHasData(entry) {
+  return !!entry && Array.isArray(entry.sets) && entry.sets.some((s) => s.reps != null);
+}
+function dayLogHasRealData(dayLog) {
+  if (!dayLog) return false;
+  const hasEntry = Object.values(dayLog.entries || {}).some((e) => entryHasData(e));
+  return hasEntry || !!dayLog.note || !!dayLog.finisherNote;
+}
+
 function allExercises() {
   const map = {};
   Object.values(library).forEach((list) => list.forEach((e) => (map[e.id] = e)));
@@ -381,9 +394,7 @@ function renderToday() {
   const current = selectedDayInfo();
   DAYS.forEach((d) => {
     const isActive = current && current.id === d.id;
-    const hasLogged =
-      logs[state.selectedDate]?.dayId === d.id &&
-      (Object.keys(logs[state.selectedDate]?.entries || {}).length > 0 || !!logs[state.selectedDate]?.note);
+    const hasLogged = logs[state.selectedDate]?.dayId === d.id && dayLogHasRealData(logs[state.selectedDate]);
     const pill = el(`
       <button class="day-pill ${isActive ? "active" : ""} ${hasLogged ? "done" : ""}" title="${d.label}">
         <span>${d.short}</span>
@@ -460,7 +471,7 @@ function renderToday() {
     actionRow.appendChild(groupBtn);
   }
 
-  const hasLoggedToday = Object.keys(todayLog.entries || {}).length > 0 || !!todayLog.note || !!todayLog.finisherNote;
+  const hasLoggedToday = dayLogHasRealData(todayLog);
   if (hasLoggedToday) {
     const clearDayBtn = el(`<button class="clear-day-btn">🗑 Clear This Day's Log</button>`);
     clearDayBtn.onclick = () => clearSingleDay(state.selectedDate);
@@ -664,6 +675,7 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
       <div class="set-col">
         ${isWeighted ? `<label>${topLabel}</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${topLabel}</label>`}
         <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + n + i : tabStart + i}" />
+        ${!isWeighted ? `<span class="set-unit-suffix">${unit}</span>` : ""}
       </div>
     `);
     const inputs = col.querySelectorAll("input");
@@ -715,6 +727,8 @@ function fillCardFooter(footer, ex, allTopped) {
     bumpLabel = `+${TIME_BUMP_SECONDS}s hold`;
   } else if (ex.trackType === "duration") {
     bumpLabel = `+${DURATION_BUMP_MINUTES} min`;
+  } else if (ex.trackType === "hr_zones") {
+    bumpLabel = `+${ZONE_BUMP_MINUTES} min per zone`;
   } else {
     bumpLabel = `+${BODYWEIGHT_REP_BUMP} reps`;
   }
@@ -744,8 +758,7 @@ function refreshActiveDayPillDone() {
   const pill = document.querySelector(".day-pill.active");
   if (!pill) return;
   const date = state.selectedDate;
-  const hasLogged = Object.keys(logs[date]?.entries || {}).length > 0 || !!logs[date]?.note;
-  pill.classList.toggle("done", hasLogged);
+  pill.classList.toggle("done", dayLogHasRealData(logs[date]));
 }
 
 function cssEscape(s) {
@@ -756,8 +769,7 @@ function cssEscape(s) {
 // and bank are never touched by this.
 function clearSingleDay(date) {
   const dayLog = logs[date];
-  const hasData = dayLog && (Object.keys(dayLog.entries || {}).length > 0 || dayLog.note || dayLog.finisherNote);
-  if (!hasData) {
+  if (!dayLogHasRealData(dayLog)) {
     alert("Nothing logged on this day yet.");
     return;
   }
@@ -804,7 +816,15 @@ function updateSet(exId, idx, field, value) {
 
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
-  logs[date].entries[exId] = { sets: newSets };
+
+  // Only actually persist an entry once there's real data (at least one
+  // set with a value entered) — touching a weight box without ever logging
+  // reps shouldn't leave a stray "logged" entry behind.
+  if (entryHasData({ sets: newSets })) {
+    logs[date].entries[exId] = { sets: newSets };
+  } else {
+    delete logs[date].entries[exId];
+  }
   saveLogs(logs);
 
   if (field === "weight" && ex.trackType === "weight") {
@@ -830,6 +850,9 @@ function applyProgression(exId) {
     } else if (e.trackType === "duration") {
       const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + DURATION_BUMP_MINUTES);
       updatedEx = { ...e, targets };
+    } else if (e.trackType === "hr_zones") {
+      const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + ZONE_BUMP_MINUTES);
+      updatedEx = { ...e, targets };
     } else {
       const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + BODYWEIGHT_REP_BUMP);
       updatedEx = { ...e, targets };
@@ -845,7 +868,7 @@ function applyProgression(exId) {
 function renderHistory() {
   const wrap = document.createElement("div");
   const dates = Object.keys(logs)
-    .filter((d) => Object.keys(logs[d].entries || {}).length > 0 || !!logs[d].note || !!logs[d].finisherNote)
+    .filter((d) => dayLogHasRealData(logs[d]))
     .sort()
     .reverse();
 
@@ -872,7 +895,7 @@ function renderHistory() {
     `);
     Object.entries(dayLog.entries || {}).forEach(([exId, entry]) => {
       const ex = exMap[exId];
-      if (!ex) return;
+      if (!ex || !entryHasData(entry)) return;
       const unit = exUnitLabel(ex);
       const setStr = entry.sets.map((s, i) => {
         if (s.reps == null) return "–";
@@ -981,6 +1004,7 @@ function exportCSV(filters) {
 
     Object.entries(entries).forEach(([exId, entry]) => {
       if (f.exerciseId && exId !== f.exerciseId) return;
+      if (!entryHasData(entry)) return; // skip stray entries with nothing actually logged
       const ex = exMap[exId];
       const name = ex ? ex.name : exId;
       const trackType = ex ? ex.trackType : "";
@@ -1038,14 +1062,17 @@ function downloadFile(content, filename, mime) {
 
 // ---- One-time data migration ----
 // Program officially started 2026-08-17. This silently purges anything
-// logged before that, plus any log entries pointing at exercise IDs that no
+// logged before that, any log entries pointing at exercise IDs that no
 // longer exist anywhere in the current library (leftover debris from the
-// sync-race incident before v7). Runs once automatically on load, guarded by
-// a flag so it never runs again — no permanent button, no ongoing UI. Safe
-// to leave in: if there's nothing to clean (e.g. on a second device after
-// the first already cleaned the shared store), it's a silent no-op.
+// sync-race incident before v7), and any entries with no real data in them
+// (e.g. a weight box touched without ever entering reps, left over from
+// before updateSet started auto-cleaning those). Runs once automatically on
+// load, guarded by a flag so it never runs again — no permanent button, no
+// ongoing UI. Safe to leave in: if there's nothing to clean (e.g. on a
+// second device after the first already cleaned the shared store), it's a
+// silent no-op.
 const CLEANUP_FLOOR_DATE = "2026-08-17";
-const CLEANUP_FLAG_KEY = "iron-log-cleanup-v13-done";
+const CLEANUP_FLAG_KEY = "iron-log-cleanup-v26-done";
 
 function runOneTimeCleanupIfNeeded() {
   if (localStorage.getItem(CLEANUP_FLAG_KEY)) return;
@@ -1053,25 +1080,27 @@ function runOneTimeCleanupIfNeeded() {
   const exMap = allExercises();
   const datesToRemove = Object.keys(logs).filter((d) => d < CLEANUP_FLOOR_DATE);
   let orphanedCount = 0;
+  let emptyCount = 0;
 
   Object.keys(logs).forEach((date) => {
     if (date < CLEANUP_FLOOR_DATE) return; // whole date already counted above
     const entries = logs[date].entries || {};
-    Object.keys(entries).forEach((exId) => {
+    Object.entries(entries).forEach(([exId, entry]) => {
       if (!exMap[exId]) orphanedCount++;
+      else if (!entryHasData(entry)) emptyCount++;
     });
   });
 
-  if (datesToRemove.length > 0 || orphanedCount > 0) {
+  if (datesToRemove.length > 0 || orphanedCount > 0 || emptyCount > 0) {
     datesToRemove.forEach((d) => delete logs[d]);
     Object.keys(logs).forEach((date) => {
       const entries = logs[date].entries || {};
-      Object.keys(entries).forEach((exId) => {
-        if (!exMap[exId]) delete entries[exId];
+      Object.entries(entries).forEach(([exId, entry]) => {
+        if (!exMap[exId] || !entryHasData(entry)) delete entries[exId];
       });
     });
     saveLogs(logs);
-    console.log(`Iron Log: one-time cleanup removed ${datesToRemove.length} old day(s) and ${orphanedCount} orphaned entr${orphanedCount === 1 ? "y" : "ies"}.`);
+    console.log(`Iron Log: one-time cleanup removed ${datesToRemove.length} old day(s), ${orphanedCount} orphaned entr${orphanedCount === 1 ? "y" : "ies"}, and ${emptyCount} empty entr${emptyCount === 1 ? "y" : "ies"}.`);
   }
 
   localStorage.setItem(CLEANUP_FLAG_KEY, "1");

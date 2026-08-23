@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v20";
+const APP_VERSION = "v22";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -46,20 +46,30 @@ const DURATION_BUMP_MINUTES = 5;
 //   bodyweight — reps only per set, no weight (e.g. Cat-Cow, or laps for swim)
 //   time       — seconds held per set, no weight (e.g. a static stretch)
 //   duration   — minutes per set, no weight (e.g. elliptical, treadmill)
+//   hr_zones   — minutes spent in each of 4 fixed heart-rate zones per
+//                session (always exactly 4 slots — Zone 1/2/3/4, not "sets")
 const TRACK_TYPES = {
   weight: { label: "Weight + Reps" },
   bodyweight: { label: "Bodyweight (reps only)" },
   time: { label: "Time held (seconds)" },
   duration: { label: "Duration (minutes)" },
+  hr_zones: { label: "Heart Rate Zones (Z1–Z4 minutes)" },
 };
 function exUnitLabel(ex) {
   if (ex.trackType === "time") return "sec";
-  if (ex.trackType === "duration") return "min";
+  if (ex.trackType === "duration" || ex.trackType === "hr_zones") return "min";
   return "reps";
 }
+function isZoneTracked(ex) {
+  return ex.trackType === "hr_zones";
+}
 function exNumSets(ex) {
+  if (isZoneTracked(ex)) return 4; // always exactly Z1–Z4
   const n = ex.numSets;
   return Number.isInteger(n) && n >= 1 ? n : 3;
+}
+function setLabelFor(ex, i) {
+  return isZoneTracked(ex) ? `Zone ${i + 1}` : `Set ${i + 1}`;
 }
 // Per-set targets are fully custom per exercise — no baked-in pattern.
 // ex.targets is a [t1, t2, ...] array (length = exNumSets(ex)) you set when
@@ -70,17 +80,20 @@ function targetForSet(ex, setIndex) {
   // Fallback for exercises saved before per-set targets existed.
   if (ex.target != null) return ex.target;
   if (ex.trackType === "time") return DEFAULT_TARGET_SECONDS;
-  if (ex.trackType === "duration") return DEFAULT_TARGET_MINUTES;
+  if (ex.trackType === "duration" || ex.trackType === "hr_zones") return DEFAULT_TARGET_MINUTES;
   return DEFAULT_TARGET_REPS;
 }
 function defaultTargets(trackType, n) {
-  const base = trackType === "time" ? DEFAULT_TARGET_SECONDS : trackType === "duration" ? DEFAULT_TARGET_MINUTES : DEFAULT_TARGET_REPS;
+  const base = trackType === "time" ? DEFAULT_TARGET_SECONDS
+    : (trackType === "duration" || trackType === "hr_zones") ? DEFAULT_TARGET_MINUTES
+    : DEFAULT_TARGET_REPS;
   return Array.from({ length: n || 3 }, () => base);
 }
 function targetLabelFor(ex) {
   const n = exNumSets(ex);
   const vals = Array.from({ length: n }, (_, i) => targetForSet(ex, i));
-  const suffix = ex.trackType === "time" ? "s" : ex.trackType === "duration" ? "min" : "";
+  const suffix = ex.trackType === "time" ? "s" : (ex.trackType === "duration" || ex.trackType === "hr_zones") ? "min" : "";
+  if (isZoneTracked(ex)) return vals.map((v, i) => `Z${i + 1}: ${v}${suffix}`).join(" / ");
   if (vals.every((v) => v === vals[0])) return `${vals[0]}${suffix} · all ${n} set${n === 1 ? "" : "s"}`;
   return vals.map((v) => `${v}${suffix}`).join(" / ");
 }
@@ -639,12 +652,14 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   card.appendChild(top);
 
   const isWeighted = ex.trackType === "weight";
+  const zoneTracked = isZoneTracked(ex);
   const n = sets.length;
   const setRow = el(`<div class="set-row"></div>`);
   sets.forEach((s, i) => {
+    const topLabel = isWeighted ? "lbs" : zoneTracked ? `Zone ${i + 1}` : unit === "sec" ? "hold" : unit === "min" ? "time" : "BW";
     const col = el(`
       <div class="set-col">
-        ${isWeighted ? `<label>lbs</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${unit === "sec" ? "hold" : unit === "min" ? "time" : "BW"}</label>`}
+        ${isWeighted ? `<label>${topLabel}</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${topLabel}</label>`}
         <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + n + i : tabStart + i}" />
       </div>
     `);
@@ -765,7 +780,7 @@ function moveExerciseInList(listKey, exId, direction) {
 function removeExerciseFromDay(dayId, exId) {
   const ex = allExercises()[exId];
   const dayLabel = listLabel(dayId);
-  const ok = confirm(`Remove ${ex ? ex.name : "this exercise"} from ${dayLabel}? Past logged history for it stays in History.`);
+  const ok = confirm(`Permanently remove ${ex ? ex.name : "this exercise"} from your ${dayLabel} routine — every ${dayLabel} day, past and future, not just today?\n\nSkipping a single day doesn't need this — just tag that date differently, or leave it unset. Past logged history for this exercise stays in History; the exercise itself stays in your bank if you want to re-add it later.`);
   if (!ok) return;
   library[dayId] = (library[dayId] || []).filter((e) => e.id !== exId);
   // A "circuit" of one doesn't mean anything — auto-ungroup any group left with a single member.
@@ -856,9 +871,10 @@ function renderHistory() {
       const ex = exMap[exId];
       if (!ex) return;
       const unit = exUnitLabel(ex);
-      const setStr = entry.sets.map((s) => {
+      const setStr = entry.sets.map((s, i) => {
         if (s.reps == null) return "–";
-        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${s.reps}${unit === "sec" ? "s" : unit === "min" ? " min" : " reps"}`;
+        const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
+        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${prefix}${s.reps}${unit === "sec" ? "s" : unit === "min" ? " min" : " reps"}`;
       }).join(", ");
       card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}</div>`));
     });
@@ -1081,7 +1097,9 @@ function renderProgress() {
 
   const currentEx = exMap[state.progressExId];
   const isWeighted = currentEx && currentEx.trackType === "weight";
+  const zoneTracked = currentEx && isZoneTracked(currentEx);
   const metricLabel = currentEx && currentEx.trackType === "time" ? "sec held"
+    : zoneTracked ? "total min (all zones)"
     : currentEx && currentEx.trackType === "duration" ? "min"
     : isWeighted ? "lbs" : "reps";
 
@@ -1093,6 +1111,8 @@ function renderProgress() {
       if (completed.length > 0) {
         const value = isWeighted
           ? Math.max(...entry.sets.map((s) => s.weight || 0))
+          : zoneTracked
+          ? entry.sets.reduce((sum, s) => sum + (s.reps || 0), 0)
           : Math.max(...entry.sets.map((s) => s.reps || 0));
         points.push({ date: fmtDate(date), weight: value });
       }
@@ -1205,7 +1225,8 @@ function openWorkoutSummaryModal(dayId) {
       const line = sets.map((s, i) => {
         const missing = s.reps == null;
         const weightPart = ex.trackType === "weight" ? `${s.weight} lbs × ` : "";
-        return `<span class="summary-set ${missing ? "missing" : ""}">${missing ? "not logged" : `${weightPart}${s.reps} ${unit}`}</span>`;
+        const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
+        return `<span class="summary-set ${missing ? "missing" : ""}">${missing ? "not logged" : `${prefix}${weightPart}${s.reps} ${unit}`}</span>`;
       }).join(`<span class="summary-sep">·</span>`);
 
       row.innerHTML = `
@@ -1315,7 +1336,7 @@ function openImportModal() {
       const name = (item.name || "").trim();
       const day = item.day;
       const type = ["upper", "lower", "other"].includes(item.type) ? item.type : "other";
-      const trackType = ["weight", "bodyweight", "time", "duration"].includes(item.trackType) ? item.trackType : "weight";
+      const trackType = ["weight", "bodyweight", "time", "duration", "hr_zones"].includes(item.trackType) ? item.trackType : "weight";
       const weights = Array.isArray(item.weights) && item.weights.length >= 1
         ? item.weights.map((w) => Number(w) || 0)
         : [20, 20, 20];
@@ -1358,13 +1379,13 @@ function openImportModal() {
 // ---- Add Exercise modal ----
 // Shared helpers for the dynamic "N sets" weight/target input rows used by
 // both Add and Edit exercise modals.
-function setNumberRow(container, count, values) {
+function setNumberRow(container, count, values, labelFn) {
   container.innerHTML = "";
   for (let i = 0; i < count; i++) {
     const val = values && values[i] != null ? values[i] : "";
     const input = document.createElement("input");
     input.type = "number";
-    input.placeholder = `Set ${i + 1}`;
+    input.placeholder = labelFn ? labelFn(i) : `Set ${i + 1}`;
     input.value = val;
     container.appendChild(input);
   }
@@ -1401,6 +1422,7 @@ function openAddExerciseModal(explicitListKey) {
           <option value="bodyweight">Bodyweight (reps only)</option>
           <option value="time">Time held (seconds)</option>
           <option value="duration">Duration (minutes)</option>
+          <option value="hr_zones">Heart Rate Zones (Z1–Z4 minutes)</option>
         </select>
       </div>
       <div class="form-row">
@@ -1455,12 +1477,20 @@ function openAddExerciseModal(explicitListKey) {
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
-    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : t === "duration" ? "Target duration per set (minutes)" : "Target reps per set";
+    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)"
+      : t === "duration" ? "Target duration per set (minutes)"
+      : t === "hr_zones" ? "Target minutes per zone"
+      : "Target reps per set";
+    numSetsInput.disabled = t === "hr_zones";
+  }
+
+  function labelFnFor(trackType) {
+    return trackType === "hr_zones" ? (i) => `Zone ${i + 1}` : (i) => `Set ${i + 1}`;
   }
 
   function rebuildRows(count, weightVals, targetVals) {
-    setNumberRow(weightsRow, count, weightVals);
-    setNumberRow(targetsRow, count, targetVals);
+    setNumberRow(weightsRow, count, weightVals, labelFnFor(trackSelect.value));
+    setNumberRow(targetsRow, count, targetVals, labelFnFor(trackSelect.value));
   }
 
   numSetsInput.onchange = () => {
@@ -1478,8 +1508,9 @@ function openAddExerciseModal(explicitListKey) {
   };
   trackSelect.onchange = () => {
     updateFieldVisibility();
-    const n = Math.max(1, Number(numSetsInput.value) || 3);
-    setNumberRow(targetsRow, n, defaultTargets(trackSelect.value, n));
+    const n = trackSelect.value === "hr_zones" ? 4 : Math.max(1, Number(numSetsInput.value) || 3);
+    numSetsInput.value = n;
+    setNumberRow(targetsRow, n, defaultTargets(trackSelect.value, n), labelFnFor(trackSelect.value));
   };
 
   updateFieldVisibility();
@@ -1494,7 +1525,7 @@ function openAddExerciseModal(explicitListKey) {
     typeSelect.value = entry.type;
     trackSelect.value = entry.trackType || "weight";
     updateFieldVisibility();
-    const n = (entry.targets && entry.targets.length) || (entry.weights && entry.weights.length) || 3;
+    const n = entry.trackType === "hr_zones" ? 4 : (entry.targets && entry.targets.length) || (entry.weights && entry.weights.length) || 3;
     numSetsInput.value = n;
     rebuildRows(n, entry.weights || Array(n).fill(20), entry.targets || defaultTargets(entry.trackType || "weight", n));
   };
@@ -1550,6 +1581,7 @@ function openEditExerciseModal(dayId, exId) {
           <option value="bodyweight">Bodyweight (reps only)</option>
           <option value="time">Time held (seconds)</option>
           <option value="duration">Duration (minutes)</option>
+          <option value="hr_zones">Heart Rate Zones (Z1–Z4 minutes)</option>
         </select>
       </div>
       <div class="form-row">
@@ -1591,20 +1623,35 @@ function openEditExerciseModal(dayId, exId) {
   const weightsRow = modal.querySelector("#edit-weights-row");
   const targetsRow = modal.querySelector("#edit-targets-row");
 
+  function labelFnFor(trackType) {
+    return trackType === "hr_zones" ? (i) => `Zone ${i + 1}` : (i) => `Set ${i + 1}`;
+  }
+
   trackSelect.value = ex.trackType || "weight";
   typeSelect.value = ex.type || "other";
   const n0 = exNumSets(ex);
   numSetsInput.value = n0;
   const w0 = ex.weights && ex.weights.length ? ex.weights : Array(n0).fill(20);
-  setNumberRow(weightsRow, n0, w0);
-  setNumberRow(targetsRow, n0, Array.from({ length: n0 }, (_, i) => targetForSet(ex, i)));
+  setNumberRow(weightsRow, n0, w0, labelFnFor(trackSelect.value));
+  setNumberRow(targetsRow, n0, Array.from({ length: n0 }, (_, i) => targetForSet(ex, i)), labelFnFor(trackSelect.value));
 
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
-    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)" : t === "duration" ? "Target duration per set (minutes)" : "Target reps per set";
+    targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)"
+      : t === "duration" ? "Target duration per set (minutes)"
+      : t === "hr_zones" ? "Target minutes per zone"
+      : "Target reps per set";
+    numSetsInput.disabled = t === "hr_zones";
   }
-  trackSelect.onchange = updateFieldVisibility;
+  trackSelect.onchange = () => {
+    updateFieldVisibility();
+    if (trackSelect.value === "hr_zones") {
+      numSetsInput.value = 4;
+      setNumberRow(targetsRow, 4, defaultTargets("hr_zones", 4), labelFnFor("hr_zones"));
+      setNumberRow(weightsRow, 4, Array(4).fill(20), labelFnFor("hr_zones"));
+    }
+  };
   updateFieldVisibility();
 
   numSetsInput.onchange = () => {
@@ -1614,8 +1661,8 @@ function openEditExerciseModal(dayId, exId) {
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
     const lastT = prevT.length ? prevT[prevT.length - 1] : (trackSelect.value === "time" ? 30 : trackSelect.value === "duration" ? 20 : 10);
-    setNumberRow(weightsRow, n, Array.from({ length: n }, (_, i) => (prevW[i] != null ? prevW[i] : lastW)));
-    setNumberRow(targetsRow, n, Array.from({ length: n }, (_, i) => (prevT[i] != null ? prevT[i] : lastT)));
+    setNumberRow(weightsRow, n, Array.from({ length: n }, (_, i) => (prevW[i] != null ? prevW[i] : lastW)), labelFnFor(trackSelect.value));
+    setNumberRow(targetsRow, n, Array.from({ length: n }, (_, i) => (prevT[i] != null ? prevT[i] : lastT)), labelFnFor(trackSelect.value));
   };
 
   overlay.appendChild(modal);

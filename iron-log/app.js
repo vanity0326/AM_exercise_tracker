@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v33";
+const APP_VERSION = "v34";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -945,7 +945,10 @@ function renderHistory() {
         const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
         return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${prefix}${s.reps}${unit === "sec" ? "s" : " " + unit}`;
       }).join(", ");
-      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}</div>`));
+      const totalStr = isZoneTracked(ex)
+        ? ` (Total: ${entry.sets.reduce((sum, s) => sum + (s.reps || 0), 0)} min)`
+        : "";
+      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}${totalStr}</div>`));
     });
     if (dayLog.note) {
       card.appendChild(el(`<div class="hist-line"><b>Notes:</b> ${dayLog.note}</div>`));

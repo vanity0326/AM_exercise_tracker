@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v35";
+const APP_VERSION = "v36";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -409,6 +409,17 @@ function selectedDayInfo() {
 
 function setDayType(dayId) {
   const date = state.selectedDate;
+  const existing = logs[date];
+  // If this date already has real logged data under a different type,
+  // switching it needs an explicit confirmation — a stray pill tap (e.g.
+  // just glancing at another day-type's list) shouldn't silently relabel
+  // an already-completed session.
+  if (existing && existing.dayId && existing.dayId !== dayId && dayLogHasRealData(existing)) {
+    const existingLabel = DAYS.find((d) => d.id === existing.dayId)?.label || existing.dayId;
+    const newLabel = DAYS.find((d) => d.id === dayId)?.label || dayId;
+    const ok = confirm(`${fmtDate(date)} already has logged ${existingLabel} data.\n\nSwitch this date's type to ${newLabel} instead? The logged exercises stay visible in History either way — this only changes which type this date is tagged as.`);
+    if (!ok) return;
+  }
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
   saveLogs(logs);

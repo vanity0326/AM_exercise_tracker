@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v34";
+const APP_VERSION = "v35";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -1481,6 +1481,16 @@ function setNumberRow(container, count, values, labelFn) {
 function readNumberRow(container) {
   return Array.from(container.querySelectorAll("input")).map((i) => Number(i.value) || 0);
 }
+// Safety net so weights/targets always match numSets exactly at save time,
+// regardless of whether the rebuild-on-input handler had a chance to fire —
+// pads by repeating the last value, or truncates if there are extras.
+function padToLength(arr, n, fallback) {
+  const result = arr.slice(0, n);
+  while (result.length < n) {
+    result.push(result.length ? result[result.length - 1] : fallback);
+  }
+  return result;
+}
 
 // ---- Bank Manager modal ----
 // Prunes the exercise bank (the "From your bank" quick-pick list) directly.
@@ -1721,9 +1731,8 @@ function openAddExerciseModal(explicitListKey) {
     updateZoneTotal();
   }
 
-  numSetsInput.onchange = () => {
+  numSetsInput.oninput = () => {
     const n = Math.max(1, Number(numSetsInput.value) || 1);
-    numSetsInput.value = n;
     const prevW = readNumberRow(weightsRow);
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
@@ -1770,10 +1779,12 @@ function openAddExerciseModal(explicitListKey) {
     const trackType = trackSelect.value;
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
-    const weights = readNumberRow(weightsRow);
+    const weights = padToLength(readNumberRow(weightsRow), numSets, 20);
     // A 0-minute zone target is valid — it just means "not planning to spend
     // time here." Only non-zone types need a hard floor of 1.
-    const targets = readNumberRow(targetsRow).map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
+    const targetFallback = trackType === "time" ? 30 : (trackType === "duration" || trackType === "hr_zones") ? 20 : 10;
+    const targets = padToLength(readNumberRow(targetsRow), numSets, targetFallback)
+      .map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
 
     const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit };
@@ -1911,9 +1922,8 @@ function openEditExerciseModal(dayId, exId) {
   };
   updateFieldVisibility();
 
-  numSetsInput.onchange = () => {
+  numSetsInput.oninput = () => {
     const n = Math.max(1, Number(numSetsInput.value) || 1);
-    numSetsInput.value = n;
     const prevW = readNumberRow(weightsRow);
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
@@ -1931,10 +1941,12 @@ function openEditExerciseModal(dayId, exId) {
     const trackType = trackSelect.value;
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
-    const weights = readNumberRow(weightsRow);
+    const weights = padToLength(readNumberRow(weightsRow), numSets, 20);
     // A 0-minute zone target is valid — it just means "not planning to spend
     // time here." Only non-zone types need a hard floor of 1.
-    const targets = readNumberRow(targetsRow).map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
+    const targetFallback = trackType === "time" ? 30 : (trackType === "duration" || trackType === "hr_zones") ? 20 : 10;
+    const targets = padToLength(readNumberRow(targetsRow), numSets, targetFallback)
+      .map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
 
     Object.assign(ex, { name, trackType, type, numSets, weights, targets, customUnit });

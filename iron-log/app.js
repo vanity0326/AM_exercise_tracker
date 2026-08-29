@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v36";
+const APP_VERSION = "v37";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -322,6 +322,101 @@ function trapFocus(overlay) {
   });
 }
 
+// ---------- Custom date picker (Monday-first) ----------
+// Native <input type="date"> follows the device's system Region setting for
+// which day starts the week — not something a webpage can override. This
+// replaces it with a fully custom calendar so the week always starts on
+// Monday here, regardless of device settings.
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function isoToParts(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return { year: y, month: m - 1, day: d };
+}
+function partsToIso(year, month, day) {
+  const mm = String(month + 1).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+function mondayFirstWeekday(year, month, day) {
+  const jsDay = new Date(year, month, day).getDay(); // 0=Sun..6=Sat
+  return (jsDay + 6) % 7; // 0=Mon..6=Sun
+}
+
+function buildCalendarGrid(year, month, selectedIso, onSelectIso) {
+  const grid = el(`<div class="cal-grid"></div>`);
+  WEEKDAY_LABELS.forEach((d) => grid.appendChild(el(`<div class="cal-weekday">${d}</div>`)));
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlanks = mondayFirstWeekday(year, month, 1);
+  for (let i = 0; i < leadingBlanks; i++) grid.appendChild(el(`<div class="cal-day cal-blank"></div>`));
+
+  const todayIso = todayISO();
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = partsToIso(year, month, day);
+    const isSelected = iso === selectedIso;
+    const isToday = iso === todayIso;
+    const cell = el(`<button type="button" class="cal-day ${isSelected ? "selected" : ""} ${isToday ? "today" : ""}">${day}</button>`);
+    cell.onclick = () => onSelectIso(iso);
+    grid.appendChild(cell);
+  }
+  return grid;
+}
+
+// Renders a button that looks like a date field; tapping it opens the
+// custom Monday-first calendar. onChange receives the new ISO date string.
+function renderDateButton(currentIso, onChange, extraClass) {
+  const btn = el(`<button type="button" class="date-btn ${extraClass || ""}">${fmtDate(currentIso)}, ${isoToParts(currentIso).year}</button>`);
+  btn.onclick = () => openDatePickerModal(currentIso, onChange);
+  return btn;
+}
+
+function openDatePickerModal(currentIso, onSelect) {
+  let { year, month } = isoToParts(currentIso);
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`
+    <div class="modal cal-modal">
+      <div class="cal-header">
+        <button type="button" class="cal-nav-btn" id="cal-prev">‹</button>
+        <div class="cal-month-label" id="cal-month-label"></div>
+        <button type="button" class="cal-nav-btn" id="cal-next">›</button>
+      </div>
+      <div id="cal-grid-holder"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="cal-cancel-btn" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  `);
+  const monthLabel = modal.querySelector("#cal-month-label");
+  const gridHolder = modal.querySelector("#cal-grid-holder");
+
+  function refresh() {
+    monthLabel.textContent = `${MONTH_NAMES[month]} ${year}`;
+    gridHolder.innerHTML = "";
+    gridHolder.appendChild(buildCalendarGrid(year, month, currentIso, (iso) => {
+      onSelect(iso);
+      document.body.removeChild(overlay);
+    }));
+  }
+  modal.querySelector("#cal-prev").onclick = () => {
+    month--; if (month < 0) { month = 11; year--; }
+    refresh();
+  };
+  modal.querySelector("#cal-next").onclick = () => {
+    month++; if (month > 11) { month = 0; year++; }
+    refresh();
+  };
+  refresh();
+
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+  modal.querySelector("#cal-cancel-btn").onclick = () => document.body.removeChild(overlay);
+
+  document.body.appendChild(overlay);
+  trapFocus(overlay);
+}
+
 // ---------- Rendering ----------
 const app = document.getElementById("app");
 
@@ -449,14 +544,13 @@ function renderToday() {
   const header = el(`
     <div class="day-header">
       <div class="day-name">${current ? current.label : "Pick a day type above"}</div>
-      <input type="date" value="${state.selectedDate}" />
     </div>
   `);
-  header.querySelector("input").onchange = (e) => {
-    state.selectedDate = e.target.value;
+  header.appendChild(renderDateButton(state.selectedDate, (iso) => {
+    state.selectedDate = iso;
     state.selectedDayId = null;
     render();
-  };
+  }));
   wrap.appendChild(header);
 
   if (!current) {
@@ -987,10 +1081,7 @@ function openExportModal() {
       <h3>Export CSV</h3>
       <div class="form-row">
         <label>Date range</label>
-        <div class="weights-row">
-          <input type="date" id="exp-from" value="${earliest}" />
-          <input type="date" id="exp-to" value="${latest}" />
-        </div>
+        <div class="weights-row" id="exp-date-row"></div>
       </div>
       <div class="form-row">
         <label>Day types to include</label>
@@ -1010,6 +1101,16 @@ function openExportModal() {
     </div>
   `);
 
+  let fromIso = earliest;
+  let toIso = latest;
+  const dateRow = modal.querySelector("#exp-date-row");
+  function refreshDateButtons() {
+    dateRow.innerHTML = "";
+    dateRow.appendChild(renderDateButton(fromIso, (iso) => { fromIso = iso; refreshDateButtons(); }));
+    dateRow.appendChild(renderDateButton(toIso, (iso) => { toIso = iso; refreshDateButtons(); }));
+  }
+  refreshDateButtons();
+
   const dayChecks = modal.querySelector("#exp-day-checks");
   DAYS.forEach((d) => {
     const chk = el(`
@@ -1025,8 +1126,8 @@ function openExportModal() {
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
   modal.querySelector("#exp-cancel-btn").onclick = () => document.body.removeChild(overlay);
   modal.querySelector("#exp-go-btn").onclick = () => {
-    const from = modal.querySelector("#exp-from").value || "0000-01-01";
-    const to = modal.querySelector("#exp-to").value || "9999-12-31";
+    const from = fromIso || "0000-01-01";
+    const to = toIso || "9999-12-31";
     const checkedDays = new Set(
       [...dayChecks.querySelectorAll("input:checked")].map((c) => c.value)
     );

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v37";
+const APP_VERSION = "v38";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -30,8 +30,46 @@ function listLabel(listKey) {
   return DAYS.find((d) => d.id === listKey)?.label || listKey;
 }
 
+// Only Upper and Lower are shared across every date of that type — that's
+// correct for strength training, where you want the same exercise list with
+// progressing weights across sessions. Everything else (Core, Mobility,
+// Cardio, and every finisher list) is scoped to the specific calendar date —
+// removing "Walking Outside" from Sept 4th's Cardio must never remove it
+// from Sept 1st's Cardio too.
+const SHARED_LIST_TYPES = new Set(["upper", "lower"]);
+function isSharedList(listKey) {
+  return SHARED_LIST_TYPES.has(listKey);
+}
+
+// Reads/writes the correct exercise list for a given date + list key,
+// transparently routing shared types (Upper/Lower) to the library and
+// everything else to that specific date's own storage.
+function getExerciseList(date, listKey) {
+  if (isSharedList(listKey)) return library[listKey] || [];
+  const perDate = logs[date]?.lists?.[listKey];
+  if (perDate) return perDate;
+  // Fallback for exercises added before per-date lists existed — shown as a
+  // starting point on any date that hasn't been individually modified yet.
+  // The moment this date's list is changed, it gets saved as its own
+  // independent copy and stops being affected by (or affecting) other dates.
+  return library[listKey] || [];
+}
+function setExerciseList(date, listKey, list) {
+  if (isSharedList(listKey)) {
+    library[listKey] = list;
+    saveLibrary(library);
+    return;
+  }
+  if (!logs[date]) logs[date] = { dayId: listKey.replace(/_finisher$/, ""), entries: {} };
+  if (!logs[date].lists) logs[date].lists = {};
+  logs[date].lists[listKey] = list;
+  saveLogs(logs);
+}
+
 // No preloaded exercises — starts empty, everything added via the + button.
-const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [], cardio: [] };
+// Only the two shared (strength) types live here now; Core/Mobility/Cardio
+// and finishers are stored per-date instead (see getExerciseList above).
+const DEFAULT_LIBRARY = { upper: [], lower: [] };
 
 const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
 const DEFAULT_TARGET_REPS = 10;
@@ -286,7 +324,10 @@ function dayLogHasRealData(dayLog) {
 
 function allExercises() {
   const map = {};
-  Object.values(library).forEach((list) => list.forEach((e) => (map[e.id] = e)));
+  Object.values(library).forEach((list) => (list || []).forEach((e) => (map[e.id] = e)));
+  Object.values(logs).forEach((dayLog) => {
+    Object.values(dayLog.lists || {}).forEach((list) => (list || []).forEach((e) => (map[e.id] = e)));
+  });
   return map;
 }
 function slugify(name) {
@@ -567,7 +608,7 @@ function renderToday() {
     return wrap;
   }
 
-  const dayExercises = library[current.id] || [];
+  const dayExercises = getExerciseList(state.selectedDate, current.id);
   const todayLog = logs[state.selectedDate] || { dayId: current.id, entries: {} };
 
   if (dayExercises.length === 0) {
@@ -628,7 +669,7 @@ function renderToday() {
 function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
   const wrap = document.createElement("div");
   const fKey = finisherKey(dayId);
-  const finisherExercises = library[fKey] || [];
+  const finisherExercises = getExerciseList(state.selectedDate, fKey);
 
   if (finisherExercises.length > 0) {
     wrap.appendChild(el(`<div class="finisher-heading">🏃 Cardio Finisher</div>`));
@@ -697,10 +738,13 @@ function renderCircuitCard(members, groupId, tabCursor, todayLog, dayId) {
   return wrapper;
 }
 
-function ungroupCircuit(dayId, groupId) {
+function ungroupCircuit(listKey, groupId) {
   if (!confirm("Ungroup this circuit? The exercises stay — they just won't be linked together anymore.")) return;
-  (library[dayId] || []).forEach((e) => { if (e.groupId === groupId) delete e.groupId; });
-  saveLibrary(library);
+  const date = state.selectedDate;
+  const list = getExerciseList(date, listKey).map((e) =>
+    e.groupId === groupId ? { ...e, groupId: undefined } : e
+  );
+  setExerciseList(date, listKey, list);
   render();
 }
 
@@ -709,7 +753,8 @@ function generateGroupId() {
 }
 
 function openGroupModal(dayId) {
-  const dayExercises = library[dayId] || [];
+  const date = state.selectedDate;
+  const dayExercises = getExerciseList(date, dayId);
   const ungrouped = dayExercises.filter((e) => !e.groupId);
   if (ungrouped.length < 2) {
     alert("You need at least 2 ungrouped exercises on this day to make a circuit.");
@@ -748,8 +793,10 @@ function openGroupModal(dayId) {
       return;
     }
     const groupId = generateGroupId();
-    (library[dayId] || []).forEach((e) => { if (selected.includes(e.id)) e.groupId = groupId; });
-    saveLibrary(library);
+    const updated = getExerciseList(date, dayId).map((e) =>
+      selected.includes(e.id) ? { ...e, groupId } : e
+    );
+    setExerciseList(date, dayId, updated);
     document.body.removeChild(overlay);
     render();
   };
@@ -930,28 +977,38 @@ function clearSingleDay(date) {
 }
 
 function moveExerciseInList(listKey, exId, direction) {
-  const list = library[listKey] || [];
+  const date = state.selectedDate;
+  const list = [...getExerciseList(date, listKey)];
   const idx = list.findIndex((e) => e.id === exId);
   if (idx === -1) return;
   const newIdx = idx + direction;
   if (newIdx < 0 || newIdx >= list.length) return;
   [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
-  saveLibrary(library);
+  setExerciseList(date, listKey, list);
   render();
 }
 
 function removeExerciseFromDay(dayId, exId) {
+  const date = state.selectedDate;
   const ex = allExercises()[exId];
   const dayLabel = listLabel(dayId);
-  const ok = confirm(`Permanently remove ${ex ? ex.name : "this exercise"} from your ${dayLabel} routine — every ${dayLabel} day, past and future, not just today?\n\nSkipping a single day doesn't need this — just tag that date differently, or leave it unset. Past logged history for this exercise stays in History; the exercise itself stays in your bank if you want to re-add it later.`);
+  const shared = isSharedList(dayId);
+  const message = shared
+    ? `Permanently remove ${ex ? ex.name : "this exercise"} from your ${dayLabel} routine — every ${dayLabel} day, past and future, not just today?\n\nSkipping a single day doesn't need this — just tag that date differently, or leave it unset. Past logged history for this exercise stays in History; the exercise itself stays in your bank if you want to re-add it later.`
+    : `Remove ${ex ? ex.name : "this exercise"} from ${dayLabel} on ${fmtDate(date)}?\n\nThis only affects this one date — other ${dayLabel} days keep whatever exercises they already have. Past logged history stays in History; the exercise itself stays in your bank.`;
+  const ok = confirm(message);
   if (!ok) return;
-  library[dayId] = (library[dayId] || []).filter((e) => e.id !== exId);
+
+  const updated = getExerciseList(date, dayId).filter((e) => e.id !== exId);
   // A "circuit" of one doesn't mean anything — auto-ungroup any group left with a single member.
   if (ex && ex.groupId) {
-    const remaining = library[dayId].filter((e) => e.groupId === ex.groupId);
-    if (remaining.length === 1) delete remaining[0].groupId;
+    const remaining = updated.filter((e) => e.groupId === ex.groupId);
+    if (remaining.length === 1) {
+      const idx = updated.findIndex((e) => e.id === remaining[0].id);
+      updated[idx] = { ...updated[idx], groupId: undefined };
+    }
   }
-  saveLibrary(library);
+  setExerciseList(date, dayId, updated);
   render();
 }
 
@@ -984,10 +1041,30 @@ function updateSet(exId, idx, field, value) {
 }
 
 function applyProgression(exId) {
-  const listKey = Object.keys(library).find((k) => (library[k] || []).some((e) => e.id === exId));
+  const date = state.selectedDate;
+
+  // Search this date's own per-date lists first, then the shared library
+  // (Upper/Lower), then fall back to legacy shared data for a non-shared
+  // type that hasn't been materialized for this date yet — in that last
+  // case, applying progression is itself the modification that splits this
+  // date off into its own independent copy.
+  const perDateLists = logs[date]?.lists || {};
+  let listKey = Object.keys(perDateLists).find((k) => (perDateLists[k] || []).some((e) => e.id === exId));
+  let source = listKey ? "perDate" : null;
+
+  if (!listKey) {
+    listKey = Object.keys(library).find((k) => isSharedList(k) && (library[k] || []).some((e) => e.id === exId));
+    if (listKey) source = "shared";
+  }
+  if (!listKey) {
+    listKey = Object.keys(library).find((k) => !isSharedList(k) && (library[k] || []).some((e) => e.id === exId));
+    if (listKey) source = "legacy";
+  }
   if (!listKey) return;
+
+  const currentList = source === "shared" ? (library[listKey] || []) : getExerciseList(date, listKey);
   let updatedEx = null;
-  library[listKey] = library[listKey].map((e) => {
+  const newList = currentList.map((e) => {
     if (e.id !== exId) return e;
     if (e.trackType === "weight") {
       const bump = PROGRESSION_BUMP[e.type] || PROGRESSION_BUMP.other;
@@ -1007,7 +1084,13 @@ function applyProgression(exId) {
     }
     return updatedEx;
   });
-  saveLibrary(library);
+
+  if (source === "shared") {
+    library[listKey] = newList;
+    saveLibrary(library);
+  } else {
+    setExerciseList(date, listKey, newList);
+  }
   if (updatedEx) upsertBank(updatedEx);
   render();
 }
@@ -1386,8 +1469,8 @@ function renderLineChart(points) {
 function openWorkoutSummaryModal(dayId) {
   const date = state.selectedDate;
   const dayLabel = DAYS.find((d) => d.id === dayId)?.label || "Workout";
-  const dayExercises = library[dayId] || [];
-  const finisherExercises = library[finisherKey(dayId)] || [];
+  const dayExercises = getExerciseList(date, dayId);
+  const finisherExercises = getExerciseList(date, finisherKey(dayId));
   const todayLog = logs[date] || { dayId, entries: {} };
 
   const overlay = el(`<div class="modal-overlay"></div>`);
@@ -1527,6 +1610,7 @@ function openImportModal() {
     }
 
     const validDays = new Set(EXERCISE_DAYS.map((d) => d.id));
+    const date = state.selectedDate;
     let added = 0, updated = 0, skipped = 0;
 
     items.forEach((item) => {
@@ -1546,25 +1630,21 @@ function openImportModal() {
       const customUnit = item.customUnit || null;
 
       if (!name || !validDays.has(day)) { skipped++; return; }
-      if (!library[day]) library[day] = [];
 
-      const existing = library[day].find((e) => bankKey(e.name) === bankKey(name));
-      if (existing) {
-        existing.weights = weights;
-        existing.type = type;
-        existing.trackType = trackType;
-        existing.targets = targets;
-        existing.numSets = numSets;
-        existing.customUnit = customUnit;
+      const currentList = getExerciseList(date, day);
+      const existingIdx = currentList.findIndex((e) => bankKey(e.name) === bankKey(name));
+      let newList;
+      if (existingIdx !== -1) {
+        newList = currentList.map((e, i) => i === existingIdx ? { ...e, weights, type, trackType, targets, numSets, customUnit } : e);
         updated++;
       } else {
-        library[day].push({ id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit });
+        newList = [...currentList, { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit }];
         added++;
       }
+      setExerciseList(date, day, newList);
       upsertBank({ name, type, trackType, weights, targets, customUnit });
     });
 
-    saveLibrary(library);
     resultBox.textContent = `Added ${added}, updated ${updated}${skipped ? `, skipped ${skipped} (missing name or invalid day)` : ""}.`;
     resultBox.className = "import-result success";
     render();
@@ -1900,9 +1980,8 @@ function openAddExerciseModal(explicitListKey) {
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
 
     const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit };
-    if (!library[dayId]) library[dayId] = [];
-    library[dayId].push(newEx);
-    saveLibrary(library);
+    const date = state.selectedDate;
+    setExerciseList(date, dayId, [...getExerciseList(date, dayId), newEx]);
     upsertBank(newEx);
 
     if (!explicitListKey) state.selectedDayId = dayId;
@@ -1920,7 +1999,8 @@ function openAddExerciseModal(explicitListKey) {
 // in place — same fields as Add Exercise, minus the bank picker and day
 // (day stays fixed; delete + re-add if you want it under a different day).
 function openEditExerciseModal(dayId, exId) {
-  const ex = (library[dayId] || []).find((e) => e.id === exId);
+  const date = state.selectedDate;
+  const ex = getExerciseList(date, dayId).find((e) => e.id === exId);
   if (!ex) return;
 
   const overlay = el(`<div class="modal-overlay"></div>`);
@@ -2060,10 +2140,16 @@ function openEditExerciseModal(dayId, exId) {
     const targets = padToLength(readNumberRow(targetsRow), numSets, targetFallback)
       .map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
+    const updatedEx = { ...ex, name, trackType, type, numSets, weights, targets, customUnit };
 
-    Object.assign(ex, { name, trackType, type, numSets, weights, targets, customUnit });
-    saveLibrary(library);
-    upsertBank(ex);
+    if (isSharedList(dayId)) {
+      Object.assign(ex, updatedEx);
+      saveLibrary(library);
+    } else {
+      const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
+      setExerciseList(date, dayId, newList);
+    }
+    upsertBank(updatedEx);
 
     document.body.removeChild(overlay);
     render();

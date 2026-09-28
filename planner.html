@@ -344,6 +344,7 @@ const PRIMARY_OPTS = [
   {value:'core',label:'Core Toning'},
   {value:'mob',label:'Mobility'},
   {value:'pilates',label:'Pilates'},
+  {value:'cardio',label:'Cardio'},
   {value:'cardio-class',label:'Cardio Class'},
   {value:'walk',label:'Walking'},
   {value:'treadmill',label:'Treadmill'},
@@ -532,7 +533,28 @@ function dayIdxOf(dayId) { return DAYS.findIndex(function(d) { return d.id === d
 // Planner pick → tracker day type (null = no matching type in the tracker).
 const PRIMARY_TO_TRACKER = { upper: 'upper', lower: 'lower', core: 'core', mob: 'mobility', rest: 'rest',
   swim: 'cardio', ellip: 'cardio', 'cardio-class': 'cardio', walk: 'cardio', treadmill: 'cardio', pilates: 'cardio' };
+PRIMARY_TO_TRACKER.cardio = 'cardio';
 const TRACKER_TO_PRIMARY = { upper: 'upper', lower: 'lower', core: 'core', mobility: 'mob', rest: 'rest' };
+
+// The tracker has one "Cardio" type; the planner splits it up. Look at the
+// cardio exercises on that date to pick the closest planner option.
+function cardioPrimaryFor(dayLog) {
+  const lib = loadIronLogLibrary() || {};
+  const list = (dayLog && dayLog.lists && dayLog.lists.cardio) || lib.cardio || [];
+  const names = list.map(function(e) { return (e.name || '').toLowerCase(); }).join(' | ');
+  if (/swim|pool|lap/.test(names)) return 'swim';
+  if (/ellip/.test(names)) return 'ellip';
+  if (/treadmill/.test(names)) return 'treadmill';
+  if (/walk/.test(names)) return 'walk';
+  if (/pilates/.test(names)) return 'pilates';
+  if (/class/.test(names)) return 'cardio-class';
+  return 'cardio';
+}
+function trackerPrimaryFor(dayLog) {
+  if (!dayLog || !dayLog.dayId) return null;
+  if (dayLog.dayId === 'cardio') return cardioPrimaryFor(dayLog);
+  return TRACKER_TO_PRIMARY[dayLog.dayId] || null;
+}
 
 function dayHasLoggedData(dayLog) {
   if (!dayLog) return false;
@@ -552,11 +574,15 @@ function loadWeek() {
     const plan = dayLog && dayLog.plan;
     const slot = planSlotFor(iso);
     const hasRun = slot && slot.workout && !slot.workout.optional;
+    const fromTracker = trackerPrimaryFor(dayLog);
     if (plan) {
-      sel[d.id] = { primary: plan.primary || '', levelup: plan.levelup || '', commute: plan.commute || 'walk-lunch' };
+      let primary = plan.primary || '';
+      // If the day type was changed in the tracker after planning, the
+      // tracker wins (e.g. Mobility switched to Cardio on the Log tab).
+      if (!plan.isCommute && fromTracker && PRIMARY_TO_TRACKER[primary] !== dayLog.dayId) primary = fromTracker;
+      sel[d.id] = { primary: primary, levelup: plan.levelup || '', commute: plan.commute || 'walk-lunch' };
       if (plan.isCommute) commute.add(d.id);
     } else {
-      const fromTracker = dayLog && TRACKER_TO_PRIMARY[dayLog.dayId];
       sel[d.id] = { primary: fromTracker || (hasRun ? 'run' : ''), levelup: '', commute: 'walk-lunch' };
     }
   });
@@ -576,7 +602,7 @@ function persistDay(dayId) {
   if (!dayHasLoggedData(dayLog)) {
     const mapped = isCom ? null : PRIMARY_TO_TRACKER[s.primary];
     if (mapped) { dayLog.dayId = mapped; dayLog.plan.setDayType = true; }
-    else if (dayLog.plan.setDayType || !dayLog.dayId) { delete dayLog.dayId; }
+    else { delete dayLog.dayId; }
   }
   savePlanData();
 }

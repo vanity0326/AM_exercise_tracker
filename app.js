@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v39";
+const APP_VERSION = "v40";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -568,6 +568,13 @@ function setDayType(dayId) {
   }
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
+  // Keep the Sunday Planner in step: changing the type here updates that
+  // date's planned session (Level Up and commute picks stay as they were).
+  const plan = logs[date].plan;
+  if (plan && !plan.isCommute) {
+    plan.primary = planPrimaryForTracker(date, dayId);
+    plan.setDayType = false;
+  }
   saveLogs(logs);
   state.selectedDayId = dayId;
   render();
@@ -681,12 +688,24 @@ function renderToday() {
 const PLAN_LABELS = {
   swim: "Swim", ellip: "Elliptical", upper: "Upper lifting", lower: "Lower lifting", fullbody: "Full Body",
   core: "Core Toning", mob: "Mobility", pilates: "Pilates", "cardio-class": "Cardio Class", walk: "Walking",
-  treadmill: "Treadmill", run: "Marathon run", rest: "Rest",
+  treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
   "lu-pilates": "Pilates", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
   "lu-cooldown": "Mindful Cooldown", "lu-rest": "Just rest!", "lu-core": "Core Toning", "lu-mob": "Mobility",
   "walk-lunch": "Walk at lunch",
 };
+function planPrimaryForTracker(date, dayId) {
+  if (dayId === "mobility") return "mob";
+  if (dayId !== "cardio") return dayId; // upper, lower, core, rest match 1:1
+  const names = getExerciseList(date, "cardio").map((e) => (e.name || "").toLowerCase()).join(" | ");
+  if (/swim|pool|lap/.test(names)) return "swim";
+  if (/ellip/.test(names)) return "ellip";
+  if (/treadmill/.test(names)) return "treadmill";
+  if (/walk/.test(names)) return "walk";
+  if (/pilates/.test(names)) return "pilates";
+  if (/class/.test(names)) return "cardio-class";
+  return "cardio";
+}
 function renderPlanNote(date) {
   const plan = logs[date]?.plan;
   if (!plan) return null;

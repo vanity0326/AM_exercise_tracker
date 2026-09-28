@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v40";
+const APP_VERSION = "v41";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional

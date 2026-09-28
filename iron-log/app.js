@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v38";
+const APP_VERSION = "v39";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -253,9 +253,14 @@ async function pullRemote(isInitial) {
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
       logs = remote.logs || {};
       bank = remote.bank || {};
+      // Older copies of the sync function didn't store the marathon plan —
+      // if the remote has none, keep this device's copy (it gets pushed up
+      // on the next save) instead of wiping it.
+      if (remote.marathon) marathon = { ...structuredClone(DEFAULT_MARATHON), ...remote.marathon };
       localStorage.setItem(LS_LIB, JSON.stringify(library));
       localStorage.setItem(LS_LOGS, JSON.stringify(logs));
       localStorage.setItem(LS_BANK, JSON.stringify(bank));
+      localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       setSyncStatus("synced");
       render();
@@ -282,7 +287,7 @@ async function pushRemote() {
     const res = await fetch(REMOTE_ENDPOINT, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ library, logs, bank }),
+      body: JSON.stringify({ library, logs, bank, marathon }),
     });
     if (!res.ok) throw new Error("push failed: " + res.status);
     setSyncStatus("synced");
@@ -300,11 +305,15 @@ let state = {
   selectedDate: todayISO(),
   selectedDayId: null,
   progressExId: null,
+  runCalIdx: null, // which calendar week the Run tab is showing (null = current)
 };
 
 // ---------- Helpers ----------
+// Local calendar date (not UTC). toISOString() is UTC, which in Central
+// time rolled "today" over to tomorrow every evening after 7pm.
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return partsToIso(d.getFullYear(), d.getMonth(), d.getDate());
 }
 function fmtDate(iso) {
   const d = new Date(iso + "T00:00:00");
@@ -468,10 +477,11 @@ function render() {
   app.appendChild(renderTabs());
 
   if (state.tab === "today") app.appendChild(renderToday());
+  if (state.tab === "run") app.appendChild(renderRun());
   if (state.tab === "history") app.appendChild(renderHistory());
   if (state.tab === "progress") app.appendChild(renderProgress());
 
-  app.appendChild(renderFab());
+  if (state.tab !== "run") app.appendChild(renderFab());
 }
 
 function renderOfflineBanner() {
@@ -515,7 +525,7 @@ function setSyncStatus(next) {
 
 function renderTabs() {
   const wrap = el(`<div class="tabs"></div>`);
-  [["today", "LOG"], ["history", "HISTORY"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
+  [["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
     const btn = el(`<button class="tab-btn ${state.tab === id ? "active" : ""}">${label}</button>`);
     btn.onclick = () => { state.tab = id; render(); };
     wrap.appendChild(btn);
@@ -594,6 +604,14 @@ function renderToday() {
   }));
   wrap.appendChild(header);
 
+  // Marathon plan: today's prescribed run (if the plan is set up and this
+  // date falls inside it). Independent of the lifting day type below.
+  const planNote = renderPlanNote(state.selectedDate);
+  if (planNote) wrap.appendChild(planNote);
+
+  const runStrip = renderRunStrip(state.selectedDate);
+  if (runStrip) wrap.appendChild(runStrip);
+
   if (!current) {
     wrap.appendChild(el(`
       <div class="empty-state">
@@ -657,6 +675,31 @@ function renderToday() {
   wrap.appendChild(renderFinisherSection(current.id, todayLog, tabCursor));
 
   return wrap;
+}
+
+// What the Sunday Planner has down for this date (if anything).
+const PLAN_LABELS = {
+  swim: "Swim", ellip: "Elliptical", upper: "Upper lifting", lower: "Lower lifting", fullbody: "Full Body",
+  core: "Core Toning", mob: "Mobility", pilates: "Pilates", "cardio-class": "Cardio Class", walk: "Walking",
+  treadmill: "Treadmill", run: "Marathon run", rest: "Rest",
+  "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
+  "lu-pilates": "Pilates", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
+  "lu-cooldown": "Mindful Cooldown", "lu-rest": "Just rest!", "lu-core": "Core Toning", "lu-mob": "Mobility",
+  "walk-lunch": "Walk at lunch",
+};
+function renderPlanNote(date) {
+  const plan = logs[date]?.plan;
+  if (!plan) return null;
+  let text;
+  if (plan.isCommute) text = `Commute day: ${PLAN_LABELS[plan.commute] || "walk at lunch"}`;
+  else {
+    const parts = [];
+    if (plan.primary) parts.push(PLAN_LABELS[plan.primary] || plan.primary);
+    if (plan.levelup) parts.push(`Level Up: ${PLAN_LABELS[plan.levelup] || plan.levelup}`);
+    if (!parts.length) return null;
+    text = parts.join(", ");
+  }
+  return el(`<div class="plan-note">📋 Planned: ${text}</div>`);
 }
 
 // A finisher list works exactly like a primary day's exercises — same
@@ -971,7 +1014,10 @@ function clearSingleDay(date) {
   const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
   const ok = confirm(`Clear all logged data for ${fmtDate(date)} (${dayInfo ? dayInfo.label : "this day"})?\n\nOnly this one day is affected — nothing else is touched. This can't be undone.`);
   if (!ok) return;
+  // Keep the Sunday Planner's pick for this date; only the logged data goes.
+  const plan = logs[date].plan;
   delete logs[date];
+  if (plan) logs[date] = { dayId: dayLog.dayId, entries: {}, plan };
   saveLogs(logs);
   render();
 }
@@ -1098,10 +1144,10 @@ function applyProgression(exId) {
 // ---- History tab ----
 function renderHistory() {
   const wrap = document.createElement("div");
-  const dates = Object.keys(logs)
-    .filter((d) => dayLogHasRealData(logs[d]))
-    .sort()
-    .reverse();
+  const dates = [...new Set([
+    ...Object.keys(logs).filter((d) => dayLogHasRealData(logs[d])),
+    ...runDatesWithData(),
+  ])].sort().reverse();
 
   const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
   exportBtn.onclick = openExportModal;
@@ -1114,16 +1160,19 @@ function renderHistory() {
 
   const exMap = allExercises();
   dates.forEach((date) => {
-    const dayLog = logs[date];
+    const dayLog = dayLogHasRealData(logs[date]) ? logs[date] : { entries: {} };
     const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
+    const runLine = runHistoryLine(date);
+    const dayLabels = [dayInfo ? dayInfo.label : "", runLine ? "Run" : ""].filter(Boolean).join(" + ");
     const card = el(`
       <div class="hist-card">
         <div class="hist-card-top">
           <span class="date">${fmtDate(date)}</span>
-          <span class="day">${dayInfo ? dayInfo.label : ""}</span>
+          <span class="day">${dayLabels}</span>
         </div>
       </div>
     `);
+    if (runLine) card.appendChild(el(runLine));
     Object.entries(dayLog.entries || {}).forEach(([exId, entry]) => {
       const ex = exMap[exId];
       if (!ex || !entryHasData(entry)) return;
@@ -1155,7 +1204,7 @@ function openExportModal() {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const exMap = allExercises();
   const exList = Object.values(exMap).sort((a, b) => a.name.localeCompare(b.name));
-  const dates = Object.keys(logs).sort();
+  const dates = [...Object.keys(logs), ...runDatesWithData()].sort();
   const earliest = dates[0] || todayISO();
   const latest = dates[dates.length - 1] || todayISO();
 
@@ -1204,6 +1253,12 @@ function openExportModal() {
     `);
     dayChecks.appendChild(chk);
   });
+  dayChecks.appendChild(el(`
+    <label class="check-item">
+      <input type="checkbox" value="run" checked />
+      <span>Runs</span>
+    </label>
+  `));
 
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
@@ -1272,6 +1327,14 @@ function exportCSV(filters) {
       rows.push([date, dayLabel, "", "finisher-note", "", "", "", dayLog.finisherNote]);
     }
   });
+
+  if (!f.exerciseId && (!f.days || f.days.has("run"))) {
+    rows.push(...runCsvRows(f.from, f.to));
+    // Keep everything in date order (sort is stable, so same-day rows keep their order).
+    const header = rows.shift();
+    rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    rows.unshift(header);
+  }
 
   if (rows.length === 1) {
     alert("No logged sessions match those filters.");

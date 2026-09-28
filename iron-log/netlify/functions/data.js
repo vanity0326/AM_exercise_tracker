@@ -1,6 +1,6 @@
 // Shared cross-device storage for Iron Log, backed by Netlify Blobs.
-// GET  -> returns the current { library, logs, bank, updatedAt } JSON, or null if nothing saved yet.
-// PUT  -> saves the posted { library, logs, bank } JSON, stamps updatedAt, returns it.
+// GET  -> returns the current { library, logs, bank, marathon, updatedAt } JSON, or null if nothing saved yet.
+// PUT  -> saves the posted { library, logs, bank, marathon } JSON, stamps updatedAt, returns it.
 //
 // No login/auth — this mirrors the Kory planner setup: one shared data pool,
 // reachable by anyone who has the URL. Fine for personal/family use; not for
@@ -34,6 +34,7 @@ export default async (req) => {
       library: body.library || {},
       logs: body.logs || {},
       bank: body.bank || {},
+      marathon: body.marathon || null,
       updatedAt: new Date().toISOString(),
     };
     await store.setJSON(KEY, toSave);

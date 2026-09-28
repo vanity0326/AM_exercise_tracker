@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v23";
+const APP_VERSION = "v39";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -30,8 +30,46 @@ function listLabel(listKey) {
   return DAYS.find((d) => d.id === listKey)?.label || listKey;
 }
 
+// Only Upper and Lower are shared across every date of that type — that's
+// correct for strength training, where you want the same exercise list with
+// progressing weights across sessions. Everything else (Core, Mobility,
+// Cardio, and every finisher list) is scoped to the specific calendar date —
+// removing "Walking Outside" from Sept 4th's Cardio must never remove it
+// from Sept 1st's Cardio too.
+const SHARED_LIST_TYPES = new Set(["upper", "lower"]);
+function isSharedList(listKey) {
+  return SHARED_LIST_TYPES.has(listKey);
+}
+
+// Reads/writes the correct exercise list for a given date + list key,
+// transparently routing shared types (Upper/Lower) to the library and
+// everything else to that specific date's own storage.
+function getExerciseList(date, listKey) {
+  if (isSharedList(listKey)) return library[listKey] || [];
+  const perDate = logs[date]?.lists?.[listKey];
+  if (perDate) return perDate;
+  // Fallback for exercises added before per-date lists existed — shown as a
+  // starting point on any date that hasn't been individually modified yet.
+  // The moment this date's list is changed, it gets saved as its own
+  // independent copy and stops being affected by (or affecting) other dates.
+  return library[listKey] || [];
+}
+function setExerciseList(date, listKey, list) {
+  if (isSharedList(listKey)) {
+    library[listKey] = list;
+    saveLibrary(library);
+    return;
+  }
+  if (!logs[date]) logs[date] = { dayId: listKey.replace(/_finisher$/, ""), entries: {} };
+  if (!logs[date].lists) logs[date].lists = {};
+  logs[date].lists[listKey] = list;
+  saveLogs(logs);
+}
+
 // No preloaded exercises — starts empty, everything added via the + button.
-const DEFAULT_LIBRARY = { upper: [], lower: [], core: [], mobility: [], cardio: [] };
+// Only the two shared (strength) types live here now; Core/Mobility/Cardio
+// and finishers are stored per-date instead (see getExerciseList above).
+const DEFAULT_LIBRARY = { upper: [], lower: [] };
 
 const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
 const DEFAULT_TARGET_REPS = 10;
@@ -40,6 +78,7 @@ const DEFAULT_TARGET_MINUTES = 20;
 const BODYWEIGHT_REP_BUMP = 2;
 const TIME_BUMP_SECONDS = 10;
 const DURATION_BUMP_MINUTES = 5;
+const ZONE_BUMP_MINUTES = 5;
 
 // Every exercise has a trackType controlling how it's logged:
 //   weight     — lbs + reps per set (default, e.g. Chest Press)
@@ -56,6 +95,7 @@ const TRACK_TYPES = {
   hr_zones: { label: "Heart Rate Zones (Z1–Z4 minutes)" },
 };
 function exUnitLabel(ex) {
+  if (ex.customUnit) return ex.customUnit;
   if (ex.trackType === "time") return "sec";
   if (ex.trackType === "duration" || ex.trackType === "hr_zones") return "min";
   return "reps";
@@ -92,8 +132,14 @@ function defaultTargets(trackType, n) {
 function targetLabelFor(ex) {
   const n = exNumSets(ex);
   const vals = Array.from({ length: n }, (_, i) => targetForSet(ex, i));
-  const suffix = ex.trackType === "time" ? "s" : (ex.trackType === "duration" || ex.trackType === "hr_zones") ? "min" : "";
-  if (isZoneTracked(ex)) return vals.map((v, i) => `Z${i + 1}: ${v}${suffix}`).join(" / ");
+  if (isZoneTracked(ex)) {
+    const total = vals.reduce((sum, v) => sum + v, 0);
+    return vals.map((v, i) => `Z${i + 1}: ${v}min`).join(" / ") + ` (Total: ${total} min)`;
+  }
+  const suffix = ex.customUnit ? ` ${ex.customUnit}`
+    : ex.trackType === "time" ? "s"
+    : ex.trackType === "duration" ? " min"
+    : "";
   if (vals.every((v) => v === vals[0])) return `${vals[0]}${suffix} · all ${n} set${n === 1 ? "" : "s"}`;
   return vals.map((v) => `${v}${suffix}`).join(" / ");
 }
@@ -173,6 +219,7 @@ function upsertBank(ex) {
     trackType: ex.trackType || "weight",
     weights: ex.weights ? [...ex.weights] : [20, 20, 20],
     targets: Array.isArray(ex.targets) ? [...ex.targets] : null,
+    customUnit: ex.customUnit || null,
   };
   saveBank(bank);
 }
@@ -206,9 +253,14 @@ async function pullRemote(isInitial) {
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
       logs = remote.logs || {};
       bank = remote.bank || {};
+      // Older copies of the sync function didn't store the marathon plan —
+      // if the remote has none, keep this device's copy (it gets pushed up
+      // on the next save) instead of wiping it.
+      if (remote.marathon) marathon = { ...structuredClone(DEFAULT_MARATHON), ...remote.marathon };
       localStorage.setItem(LS_LIB, JSON.stringify(library));
       localStorage.setItem(LS_LOGS, JSON.stringify(logs));
       localStorage.setItem(LS_BANK, JSON.stringify(bank));
+      localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       setSyncStatus("synced");
       render();
@@ -235,7 +287,7 @@ async function pushRemote() {
     const res = await fetch(REMOTE_ENDPOINT, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ library, logs, bank }),
+      body: JSON.stringify({ library, logs, bank, marathon }),
     });
     if (!res.ok) throw new Error("push failed: " + res.status);
     setSyncStatus("synced");
@@ -253,19 +305,38 @@ let state = {
   selectedDate: todayISO(),
   selectedDayId: null,
   progressExId: null,
+  runCalIdx: null, // which calendar week the Run tab is showing (null = current)
 };
 
 // ---------- Helpers ----------
+// Local calendar date (not UTC). toISOString() is UTC, which in Central
+// time rolled "today" over to tomorrow every evening after 7pm.
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return partsToIso(d.getFullYear(), d.getMonth(), d.getDate());
 }
 function fmtDate(iso) {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+// An entry only counts as "actually logged" if at least one set has a real
+// value — an entry that exists but has every set empty (e.g. from touching
+// a weight box without ever entering reps) is noise, not a workout.
+function entryHasData(entry) {
+  return !!entry && Array.isArray(entry.sets) && entry.sets.some((s) => s.reps != null);
+}
+function dayLogHasRealData(dayLog) {
+  if (!dayLog) return false;
+  const hasEntry = Object.values(dayLog.entries || {}).some((e) => entryHasData(e));
+  return hasEntry || !!dayLog.note || !!dayLog.finisherNote;
+}
+
 function allExercises() {
   const map = {};
-  Object.values(library).forEach((list) => list.forEach((e) => (map[e.id] = e)));
+  Object.values(library).forEach((list) => (list || []).forEach((e) => (map[e.id] = e)));
+  Object.values(logs).forEach((dayLog) => {
+    Object.values(dayLog.lists || {}).forEach((list) => (list || []).forEach((e) => (map[e.id] = e)));
+  });
   return map;
 }
 function slugify(name) {
@@ -275,6 +346,125 @@ function el(html) {
   const t = document.createElement("template");
   t.innerHTML = html.trim();
   return t.content.firstElementChild;
+}
+
+// Traps Tab navigation inside a modal overlay. Without this, pressing Tab
+// jumps to whatever's behind the modal — exercise cards on the Log tab carry
+// explicit tabindex values (for the lbs→lbs→lbs→reps→reps→reps flow), and
+// browsers give those priority over the modal's own unnumbered fields,
+// yanking focus (and sometimes the modal itself) right out from under you.
+function trapFocus(overlay) {
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const focusable = Array.from(
+      overlay.querySelectorAll("input, select, textarea, button")
+    ).filter((el) => !el.disabled && el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    e.preventDefault();
+    const currentIndex = focusable.indexOf(document.activeElement);
+    let nextIndex;
+    if (e.shiftKey) {
+      nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
+    } else {
+      nextIndex = currentIndex === -1 || currentIndex === focusable.length - 1 ? 0 : currentIndex + 1;
+    }
+    focusable[nextIndex].focus();
+  });
+}
+
+// ---------- Custom date picker (Monday-first) ----------
+// Native <input type="date"> follows the device's system Region setting for
+// which day starts the week — not something a webpage can override. This
+// replaces it with a fully custom calendar so the week always starts on
+// Monday here, regardless of device settings.
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function isoToParts(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return { year: y, month: m - 1, day: d };
+}
+function partsToIso(year, month, day) {
+  const mm = String(month + 1).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+function mondayFirstWeekday(year, month, day) {
+  const jsDay = new Date(year, month, day).getDay(); // 0=Sun..6=Sat
+  return (jsDay + 6) % 7; // 0=Mon..6=Sun
+}
+
+function buildCalendarGrid(year, month, selectedIso, onSelectIso) {
+  const grid = el(`<div class="cal-grid"></div>`);
+  WEEKDAY_LABELS.forEach((d) => grid.appendChild(el(`<div class="cal-weekday">${d}</div>`)));
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlanks = mondayFirstWeekday(year, month, 1);
+  for (let i = 0; i < leadingBlanks; i++) grid.appendChild(el(`<div class="cal-day cal-blank"></div>`));
+
+  const todayIso = todayISO();
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = partsToIso(year, month, day);
+    const isSelected = iso === selectedIso;
+    const isToday = iso === todayIso;
+    const cell = el(`<button type="button" class="cal-day ${isSelected ? "selected" : ""} ${isToday ? "today" : ""}">${day}</button>`);
+    cell.onclick = () => onSelectIso(iso);
+    grid.appendChild(cell);
+  }
+  return grid;
+}
+
+// Renders a button that looks like a date field; tapping it opens the
+// custom Monday-first calendar. onChange receives the new ISO date string.
+function renderDateButton(currentIso, onChange, extraClass) {
+  const btn = el(`<button type="button" class="date-btn ${extraClass || ""}">${fmtDate(currentIso)}, ${isoToParts(currentIso).year}</button>`);
+  btn.onclick = () => openDatePickerModal(currentIso, onChange);
+  return btn;
+}
+
+function openDatePickerModal(currentIso, onSelect) {
+  let { year, month } = isoToParts(currentIso);
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`
+    <div class="modal cal-modal">
+      <div class="cal-header">
+        <button type="button" class="cal-nav-btn" id="cal-prev">‹</button>
+        <div class="cal-month-label" id="cal-month-label"></div>
+        <button type="button" class="cal-nav-btn" id="cal-next">›</button>
+      </div>
+      <div id="cal-grid-holder"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="cal-cancel-btn" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  `);
+  const monthLabel = modal.querySelector("#cal-month-label");
+  const gridHolder = modal.querySelector("#cal-grid-holder");
+
+  function refresh() {
+    monthLabel.textContent = `${MONTH_NAMES[month]} ${year}`;
+    gridHolder.innerHTML = "";
+    gridHolder.appendChild(buildCalendarGrid(year, month, currentIso, (iso) => {
+      onSelect(iso);
+      document.body.removeChild(overlay);
+    }));
+  }
+  modal.querySelector("#cal-prev").onclick = () => {
+    month--; if (month < 0) { month = 11; year--; }
+    refresh();
+  };
+  modal.querySelector("#cal-next").onclick = () => {
+    month++; if (month > 11) { month = 0; year++; }
+    refresh();
+  };
+  refresh();
+
+  overlay.appendChild(modal);
+  overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
+  modal.querySelector("#cal-cancel-btn").onclick = () => document.body.removeChild(overlay);
+
+  document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 // ---------- Rendering ----------
@@ -287,10 +477,11 @@ function render() {
   app.appendChild(renderTabs());
 
   if (state.tab === "today") app.appendChild(renderToday());
+  if (state.tab === "run") app.appendChild(renderRun());
   if (state.tab === "history") app.appendChild(renderHistory());
   if (state.tab === "progress") app.appendChild(renderProgress());
 
-  app.appendChild(renderFab());
+  if (state.tab !== "run") app.appendChild(renderFab());
 }
 
 function renderOfflineBanner() {
@@ -313,8 +504,8 @@ function renderHeader() {
     <div class="header">
       <div class="header-top">
         <div>
-          <div class="title">IRON LOG</div>
-          <div class="subtitle">Block 2 · Systems Builder · ${APP_VERSION}</div>
+          <div class="title">TONI'S TOTAL TRAINING TRACKER</div>
+          <div class="subtitle">${APP_VERSION}</div>
         </div>
         <div class="sync-badge ${s.cls}" id="syncBadge">${s.text}</div>
       </div>
@@ -334,7 +525,7 @@ function setSyncStatus(next) {
 
 function renderTabs() {
   const wrap = el(`<div class="tabs"></div>`);
-  [["today", "LOG"], ["history", "HISTORY"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
+  [["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
     const btn = el(`<button class="tab-btn ${state.tab === id ? "active" : ""}">${label}</button>`);
     btn.onclick = () => { state.tab = id; render(); };
     wrap.appendChild(btn);
@@ -364,6 +555,17 @@ function selectedDayInfo() {
 
 function setDayType(dayId) {
   const date = state.selectedDate;
+  const existing = logs[date];
+  // If this date already has real logged data under a different type,
+  // switching it needs an explicit confirmation — a stray pill tap (e.g.
+  // just glancing at another day-type's list) shouldn't silently relabel
+  // an already-completed session.
+  if (existing && existing.dayId && existing.dayId !== dayId && dayLogHasRealData(existing)) {
+    const existingLabel = DAYS.find((d) => d.id === existing.dayId)?.label || existing.dayId;
+    const newLabel = DAYS.find((d) => d.id === dayId)?.label || dayId;
+    const ok = confirm(`${fmtDate(date)} already has logged ${existingLabel} data.\n\nSwitch this date's type to ${newLabel} instead? The logged exercises stay visible in History either way — this only changes which type this date is tagged as.`);
+    if (!ok) return;
+  }
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
   saveLogs(logs);
@@ -378,9 +580,7 @@ function renderToday() {
   const current = selectedDayInfo();
   DAYS.forEach((d) => {
     const isActive = current && current.id === d.id;
-    const hasLogged =
-      logs[state.selectedDate]?.dayId === d.id &&
-      (Object.keys(logs[state.selectedDate]?.entries || {}).length > 0 || !!logs[state.selectedDate]?.note);
+    const hasLogged = logs[state.selectedDate]?.dayId === d.id && dayLogHasRealData(logs[state.selectedDate]);
     const pill = el(`
       <button class="day-pill ${isActive ? "active" : ""} ${hasLogged ? "done" : ""}" title="${d.label}">
         <span>${d.short}</span>
@@ -395,15 +595,22 @@ function renderToday() {
   const header = el(`
     <div class="day-header">
       <div class="day-name">${current ? current.label : "Pick a day type above"}</div>
-      <input type="date" value="${state.selectedDate}" />
     </div>
   `);
-  header.querySelector("input").onchange = (e) => {
-    state.selectedDate = e.target.value;
+  header.appendChild(renderDateButton(state.selectedDate, (iso) => {
+    state.selectedDate = iso;
     state.selectedDayId = null;
     render();
-  };
+  }));
   wrap.appendChild(header);
+
+  // Marathon plan: today's prescribed run (if the plan is set up and this
+  // date falls inside it). Independent of the lifting day type below.
+  const planNote = renderPlanNote(state.selectedDate);
+  if (planNote) wrap.appendChild(planNote);
+
+  const runStrip = renderRunStrip(state.selectedDate);
+  if (runStrip) wrap.appendChild(runStrip);
 
   if (!current) {
     wrap.appendChild(el(`
@@ -419,7 +626,7 @@ function renderToday() {
     return wrap;
   }
 
-  const dayExercises = library[current.id] || [];
+  const dayExercises = getExerciseList(state.selectedDate, current.id);
   const todayLog = logs[state.selectedDate] || { dayId: current.id, entries: {} };
 
   if (dayExercises.length === 0) {
@@ -457,7 +664,7 @@ function renderToday() {
     actionRow.appendChild(groupBtn);
   }
 
-  const hasLoggedToday = Object.keys(todayLog.entries || {}).length > 0 || !!todayLog.note || !!todayLog.finisherNote;
+  const hasLoggedToday = dayLogHasRealData(todayLog);
   if (hasLoggedToday) {
     const clearDayBtn = el(`<button class="clear-day-btn">🗑 Clear This Day's Log</button>`);
     clearDayBtn.onclick = () => clearSingleDay(state.selectedDate);
@@ -465,22 +672,51 @@ function renderToday() {
   }
   wrap.appendChild(actionRow);
 
-  wrap.appendChild(renderFinisherSection(current.id, todayLog));
+  wrap.appendChild(renderFinisherSection(current.id, todayLog, tabCursor));
 
   return wrap;
+}
+
+// What the Sunday Planner has down for this date (if anything).
+const PLAN_LABELS = {
+  swim: "Swim", ellip: "Elliptical", upper: "Upper lifting", lower: "Lower lifting", fullbody: "Full Body",
+  core: "Core Toning", mob: "Mobility", pilates: "Pilates", "cardio-class": "Cardio Class", walk: "Walking",
+  treadmill: "Treadmill", run: "Marathon run", rest: "Rest",
+  "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
+  "lu-pilates": "Pilates", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
+  "lu-cooldown": "Mindful Cooldown", "lu-rest": "Just rest!", "lu-core": "Core Toning", "lu-mob": "Mobility",
+  "walk-lunch": "Walk at lunch",
+};
+function renderPlanNote(date) {
+  const plan = logs[date]?.plan;
+  if (!plan) return null;
+  let text;
+  if (plan.isCommute) text = `Commute day: ${PLAN_LABELS[plan.commute] || "walk at lunch"}`;
+  else {
+    const parts = [];
+    if (plan.primary) parts.push(PLAN_LABELS[plan.primary] || plan.primary);
+    if (plan.levelup) parts.push(`Level Up: ${PLAN_LABELS[plan.levelup] || plan.levelup}`);
+    if (!parts.length) return null;
+    text = parts.join(", ");
+  }
+  return el(`<div class="plan-note">📋 Planned: ${text}</div>`);
 }
 
 // A finisher list works exactly like a primary day's exercises — same
 // cards, same Add Exercise modal (bank included), same edit/delete/circuit
 // grouping — just stored under its own key and shown in a separate section.
-function renderFinisherSection(dayId, todayLog) {
+// sharedTabCursor continues the SAME tabindex sequence as the primary list
+// above it — using a fresh cursor here would hand out duplicate tabindex
+// values, and the browser resolves duplicates by jumping to whichever one
+// comes first in the DOM (i.e. back up to the primary list).
+function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
   const wrap = document.createElement("div");
   const fKey = finisherKey(dayId);
-  const finisherExercises = library[fKey] || [];
+  const finisherExercises = getExerciseList(state.selectedDate, fKey);
 
   if (finisherExercises.length > 0) {
     wrap.appendChild(el(`<div class="finisher-heading">🏃 Cardio Finisher</div>`));
-    const tabCursor = makeTabCursor();
+    const tabCursor = sharedTabCursor || makeTabCursor();
     const plan = buildRenderPlan(finisherExercises);
     plan.forEach((item) => {
       if (item.type === "solo") {
@@ -545,10 +781,13 @@ function renderCircuitCard(members, groupId, tabCursor, todayLog, dayId) {
   return wrapper;
 }
 
-function ungroupCircuit(dayId, groupId) {
+function ungroupCircuit(listKey, groupId) {
   if (!confirm("Ungroup this circuit? The exercises stay — they just won't be linked together anymore.")) return;
-  (library[dayId] || []).forEach((e) => { if (e.groupId === groupId) delete e.groupId; });
-  saveLibrary(library);
+  const date = state.selectedDate;
+  const list = getExerciseList(date, listKey).map((e) =>
+    e.groupId === groupId ? { ...e, groupId: undefined } : e
+  );
+  setExerciseList(date, listKey, list);
   render();
 }
 
@@ -557,7 +796,8 @@ function generateGroupId() {
 }
 
 function openGroupModal(dayId) {
-  const dayExercises = library[dayId] || [];
+  const date = state.selectedDate;
+  const dayExercises = getExerciseList(date, dayId);
   const ungrouped = dayExercises.filter((e) => !e.groupId);
   if (ungrouped.length < 2) {
     alert("You need at least 2 ungrouped exercises on this day to make a circuit.");
@@ -596,13 +836,16 @@ function openGroupModal(dayId) {
       return;
     }
     const groupId = generateGroupId();
-    (library[dayId] || []).forEach((e) => { if (selected.includes(e.id)) e.groupId = groupId; });
-    saveLibrary(library);
+    const updated = getExerciseList(date, dayId).map((e) =>
+      selected.includes(e.id) ? { ...e, groupId } : e
+    );
+    setExerciseList(date, dayId, updated);
     document.body.removeChild(overlay);
     render();
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 function defaultSets(ex) {
@@ -656,11 +899,12 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   const n = sets.length;
   const setRow = el(`<div class="set-row"></div>`);
   sets.forEach((s, i) => {
-    const topLabel = isWeighted ? "lbs" : zoneTracked ? `Zone ${i + 1}` : unit === "sec" ? "hold" : unit === "min" ? "time" : "BW";
+    const topLabel = isWeighted ? "lbs" : zoneTracked ? `Zone ${i + 1}` : ex.customUnit ? ex.customUnit : unit === "sec" ? "hold" : unit === "min" ? "time" : "BW";
     const col = el(`
       <div class="set-col">
         ${isWeighted ? `<label>${topLabel}</label><input type="number" value="${s.weight}" tabindex="${tabStart + i}" />` : `<label>${topLabel}</label>`}
         <input type="number" placeholder="${unit}" value="${s.reps ?? ""}" class="${s.reps != null ? "has-reps" : ""}" tabindex="${isWeighted ? tabStart + n + i : tabStart + i}" />
+        ${!isWeighted ? `<span class="set-unit-suffix">${unit}</span>` : ""}
       </div>
     `);
     const inputs = col.querySelectorAll("input");
@@ -684,8 +928,15 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   return card;
 }
 
+// A zone-tracked exercise with a target of 0 for a given zone means "not
+// planning to spend time here" — it shouldn't block the exercise from
+// showing as topped out, or require a value to be entered at all.
+function isSetSkippable(ex, i) {
+  return isZoneTracked(ex) && targetForSet(ex, i) === 0;
+}
+
 function computeAllTopped(sets, ex) {
-  return sets.every((s, i) => s.reps != null && s.reps >= targetForSet(ex, i));
+  return sets.every((s, i) => isSetSkippable(ex, i) || (s.reps != null && s.reps >= targetForSet(ex, i)));
 }
 
 function buildPlates(sets, ex) {
@@ -693,10 +944,12 @@ function buildPlates(sets, ex) {
   const frag = document.createDocumentFragment();
   sets.forEach((s, i) => {
     const filled = s.reps != null;
-    const isTop = filled && s.reps >= targetForSet(ex, i);
+    const skippable = isSetSkippable(ex, i);
+    const isTop = skippable || (filled && s.reps >= targetForSet(ex, i));
     const flag = allTopped && i === sets.length - 1;
     const h = 34 + i * 5;
-    frag.appendChild(el(`<div class="plate ${filled ? "filled" : ""} ${isTop ? "topped" : ""} ${flag ? "flag" : ""}" style="height:${h}px">${filled ? s.reps : i + 1}</div>`));
+    const display = filled ? s.reps : skippable ? "–" : i + 1;
+    frag.appendChild(el(`<div class="plate ${filled || skippable ? "filled" : ""} ${isTop ? "topped" : ""} ${flag ? "flag" : ""}" style="height:${h}px">${display}</div>`));
   });
   return frag;
 }
@@ -712,6 +965,8 @@ function fillCardFooter(footer, ex, allTopped) {
     bumpLabel = `+${TIME_BUMP_SECONDS}s hold`;
   } else if (ex.trackType === "duration") {
     bumpLabel = `+${DURATION_BUMP_MINUTES} min`;
+  } else if (ex.trackType === "hr_zones") {
+    bumpLabel = `+${ZONE_BUMP_MINUTES} min per zone`;
   } else {
     bumpLabel = `+${BODYWEIGHT_REP_BUMP} reps`;
   }
@@ -741,8 +996,7 @@ function refreshActiveDayPillDone() {
   const pill = document.querySelector(".day-pill.active");
   if (!pill) return;
   const date = state.selectedDate;
-  const hasLogged = Object.keys(logs[date]?.entries || {}).length > 0 || !!logs[date]?.note;
-  pill.classList.toggle("done", hasLogged);
+  pill.classList.toggle("done", dayLogHasRealData(logs[date]));
 }
 
 function cssEscape(s) {
@@ -753,42 +1007,54 @@ function cssEscape(s) {
 // and bank are never touched by this.
 function clearSingleDay(date) {
   const dayLog = logs[date];
-  const hasData = dayLog && (Object.keys(dayLog.entries || {}).length > 0 || dayLog.note || dayLog.finisherNote);
-  if (!hasData) {
+  if (!dayLogHasRealData(dayLog)) {
     alert("Nothing logged on this day yet.");
     return;
   }
   const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
   const ok = confirm(`Clear all logged data for ${fmtDate(date)} (${dayInfo ? dayInfo.label : "this day"})?\n\nOnly this one day is affected — nothing else is touched. This can't be undone.`);
   if (!ok) return;
+  // Keep the Sunday Planner's pick for this date; only the logged data goes.
+  const plan = logs[date].plan;
   delete logs[date];
+  if (plan) logs[date] = { dayId: dayLog.dayId, entries: {}, plan };
   saveLogs(logs);
   render();
 }
 
 function moveExerciseInList(listKey, exId, direction) {
-  const list = library[listKey] || [];
+  const date = state.selectedDate;
+  const list = [...getExerciseList(date, listKey)];
   const idx = list.findIndex((e) => e.id === exId);
   if (idx === -1) return;
   const newIdx = idx + direction;
   if (newIdx < 0 || newIdx >= list.length) return;
   [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
-  saveLibrary(library);
+  setExerciseList(date, listKey, list);
   render();
 }
 
 function removeExerciseFromDay(dayId, exId) {
+  const date = state.selectedDate;
   const ex = allExercises()[exId];
   const dayLabel = listLabel(dayId);
-  const ok = confirm(`Permanently remove ${ex ? ex.name : "this exercise"} from your ${dayLabel} routine — every ${dayLabel} day, past and future, not just today?\n\nSkipping a single day doesn't need this — just tag that date differently, or leave it unset. Past logged history for this exercise stays in History; the exercise itself stays in your bank if you want to re-add it later.`);
+  const shared = isSharedList(dayId);
+  const message = shared
+    ? `Permanently remove ${ex ? ex.name : "this exercise"} from your ${dayLabel} routine — every ${dayLabel} day, past and future, not just today?\n\nSkipping a single day doesn't need this — just tag that date differently, or leave it unset. Past logged history for this exercise stays in History; the exercise itself stays in your bank if you want to re-add it later.`
+    : `Remove ${ex ? ex.name : "this exercise"} from ${dayLabel} on ${fmtDate(date)}?\n\nThis only affects this one date — other ${dayLabel} days keep whatever exercises they already have. Past logged history stays in History; the exercise itself stays in your bank.`;
+  const ok = confirm(message);
   if (!ok) return;
-  library[dayId] = (library[dayId] || []).filter((e) => e.id !== exId);
+
+  const updated = getExerciseList(date, dayId).filter((e) => e.id !== exId);
   // A "circuit" of one doesn't mean anything — auto-ungroup any group left with a single member.
   if (ex && ex.groupId) {
-    const remaining = library[dayId].filter((e) => e.groupId === ex.groupId);
-    if (remaining.length === 1) delete remaining[0].groupId;
+    const remaining = updated.filter((e) => e.groupId === ex.groupId);
+    if (remaining.length === 1) {
+      const idx = updated.findIndex((e) => e.id === remaining[0].id);
+      updated[idx] = { ...updated[idx], groupId: undefined };
+    }
   }
-  saveLibrary(library);
+  setExerciseList(date, dayId, updated);
   render();
 }
 
@@ -801,11 +1067,19 @@ function updateSet(exId, idx, field, value) {
 
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
-  logs[date].entries[exId] = { sets: newSets };
+
+  // Only actually persist an entry once there's real data (at least one
+  // set with a value entered) — touching a weight box without ever logging
+  // reps shouldn't leave a stray "logged" entry behind.
+  if (entryHasData({ sets: newSets })) {
+    logs[date].entries[exId] = { sets: newSets };
+  } else {
+    delete logs[date].entries[exId];
+  }
   saveLogs(logs);
 
   if (field === "weight" && ex.trackType === "weight") {
-    upsertBank({ name: ex.name, type: ex.type, trackType: ex.trackType, weights: newSets.map((s) => s.weight), targets: ex.targets });
+    upsertBank({ name: ex.name, type: ex.type, trackType: ex.trackType, weights: newSets.map((s) => s.weight), targets: ex.targets, customUnit: ex.customUnit });
   }
 
   refreshExerciseCard(exId, newSets);
@@ -813,10 +1087,30 @@ function updateSet(exId, idx, field, value) {
 }
 
 function applyProgression(exId) {
-  const listKey = Object.keys(library).find((k) => (library[k] || []).some((e) => e.id === exId));
+  const date = state.selectedDate;
+
+  // Search this date's own per-date lists first, then the shared library
+  // (Upper/Lower), then fall back to legacy shared data for a non-shared
+  // type that hasn't been materialized for this date yet — in that last
+  // case, applying progression is itself the modification that splits this
+  // date off into its own independent copy.
+  const perDateLists = logs[date]?.lists || {};
+  let listKey = Object.keys(perDateLists).find((k) => (perDateLists[k] || []).some((e) => e.id === exId));
+  let source = listKey ? "perDate" : null;
+
+  if (!listKey) {
+    listKey = Object.keys(library).find((k) => isSharedList(k) && (library[k] || []).some((e) => e.id === exId));
+    if (listKey) source = "shared";
+  }
+  if (!listKey) {
+    listKey = Object.keys(library).find((k) => !isSharedList(k) && (library[k] || []).some((e) => e.id === exId));
+    if (listKey) source = "legacy";
+  }
   if (!listKey) return;
+
+  const currentList = source === "shared" ? (library[listKey] || []) : getExerciseList(date, listKey);
   let updatedEx = null;
-  library[listKey] = library[listKey].map((e) => {
+  const newList = currentList.map((e) => {
     if (e.id !== exId) return e;
     if (e.trackType === "weight") {
       const bump = PROGRESSION_BUMP[e.type] || PROGRESSION_BUMP.other;
@@ -827,13 +1121,22 @@ function applyProgression(exId) {
     } else if (e.trackType === "duration") {
       const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + DURATION_BUMP_MINUTES);
       updatedEx = { ...e, targets };
+    } else if (e.trackType === "hr_zones") {
+      const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + ZONE_BUMP_MINUTES);
+      updatedEx = { ...e, targets };
     } else {
       const targets = Array.from({ length: exNumSets(e) }, (_, i) => targetForSet(e, i) + BODYWEIGHT_REP_BUMP);
       updatedEx = { ...e, targets };
     }
     return updatedEx;
   });
-  saveLibrary(library);
+
+  if (source === "shared") {
+    library[listKey] = newList;
+    saveLibrary(library);
+  } else {
+    setExerciseList(date, listKey, newList);
+  }
   if (updatedEx) upsertBank(updatedEx);
   render();
 }
@@ -841,10 +1144,10 @@ function applyProgression(exId) {
 // ---- History tab ----
 function renderHistory() {
   const wrap = document.createElement("div");
-  const dates = Object.keys(logs)
-    .filter((d) => Object.keys(logs[d].entries || {}).length > 0 || !!logs[d].note || !!logs[d].finisherNote)
-    .sort()
-    .reverse();
+  const dates = [...new Set([
+    ...Object.keys(logs).filter((d) => dayLogHasRealData(logs[d])),
+    ...runDatesWithData(),
+  ])].sort().reverse();
 
   const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
   exportBtn.onclick = openExportModal;
@@ -857,26 +1160,32 @@ function renderHistory() {
 
   const exMap = allExercises();
   dates.forEach((date) => {
-    const dayLog = logs[date];
+    const dayLog = dayLogHasRealData(logs[date]) ? logs[date] : { entries: {} };
     const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
+    const runLine = runHistoryLine(date);
+    const dayLabels = [dayInfo ? dayInfo.label : "", runLine ? "Run" : ""].filter(Boolean).join(" + ");
     const card = el(`
       <div class="hist-card">
         <div class="hist-card-top">
           <span class="date">${fmtDate(date)}</span>
-          <span class="day">${dayInfo ? dayInfo.label : ""}</span>
+          <span class="day">${dayLabels}</span>
         </div>
       </div>
     `);
+    if (runLine) card.appendChild(el(runLine));
     Object.entries(dayLog.entries || {}).forEach(([exId, entry]) => {
       const ex = exMap[exId];
-      if (!ex) return;
+      if (!ex || !entryHasData(entry)) return;
       const unit = exUnitLabel(ex);
       const setStr = entry.sets.map((s, i) => {
         if (s.reps == null) return "–";
         const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
-        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${prefix}${s.reps}${unit === "sec" ? "s" : unit === "min" ? " min" : " reps"}`;
+        return ex.trackType === "weight" ? `${s.weight}×${s.reps}` : `${prefix}${s.reps}${unit === "sec" ? "s" : " " + unit}`;
       }).join(", ");
-      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}</div>`));
+      const totalStr = isZoneTracked(ex)
+        ? ` (Total: ${entry.sets.reduce((sum, s) => sum + (s.reps || 0), 0)} min)`
+        : "";
+      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}${totalStr}</div>`));
     });
     if (dayLog.note) {
       card.appendChild(el(`<div class="hist-line"><b>Notes:</b> ${dayLog.note}</div>`));
@@ -895,7 +1204,7 @@ function openExportModal() {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const exMap = allExercises();
   const exList = Object.values(exMap).sort((a, b) => a.name.localeCompare(b.name));
-  const dates = Object.keys(logs).sort();
+  const dates = [...Object.keys(logs), ...runDatesWithData()].sort();
   const earliest = dates[0] || todayISO();
   const latest = dates[dates.length - 1] || todayISO();
 
@@ -904,10 +1213,7 @@ function openExportModal() {
       <h3>Export CSV</h3>
       <div class="form-row">
         <label>Date range</label>
-        <div class="weights-row">
-          <input type="date" id="exp-from" value="${earliest}" />
-          <input type="date" id="exp-to" value="${latest}" />
-        </div>
+        <div class="weights-row" id="exp-date-row"></div>
       </div>
       <div class="form-row">
         <label>Day types to include</label>
@@ -927,6 +1233,16 @@ function openExportModal() {
     </div>
   `);
 
+  let fromIso = earliest;
+  let toIso = latest;
+  const dateRow = modal.querySelector("#exp-date-row");
+  function refreshDateButtons() {
+    dateRow.innerHTML = "";
+    dateRow.appendChild(renderDateButton(fromIso, (iso) => { fromIso = iso; refreshDateButtons(); }));
+    dateRow.appendChild(renderDateButton(toIso, (iso) => { toIso = iso; refreshDateButtons(); }));
+  }
+  refreshDateButtons();
+
   const dayChecks = modal.querySelector("#exp-day-checks");
   DAYS.forEach((d) => {
     const chk = el(`
@@ -937,13 +1253,19 @@ function openExportModal() {
     `);
     dayChecks.appendChild(chk);
   });
+  dayChecks.appendChild(el(`
+    <label class="check-item">
+      <input type="checkbox" value="run" checked />
+      <span>Runs</span>
+    </label>
+  `));
 
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
   modal.querySelector("#exp-cancel-btn").onclick = () => document.body.removeChild(overlay);
   modal.querySelector("#exp-go-btn").onclick = () => {
-    const from = modal.querySelector("#exp-from").value || "0000-01-01";
-    const to = modal.querySelector("#exp-to").value || "9999-12-31";
+    const from = fromIso || "0000-01-01";
+    const to = toIso || "9999-12-31";
     const checkedDays = new Set(
       [...dayChecks.querySelectorAll("input:checked")].map((c) => c.value)
     );
@@ -954,6 +1276,7 @@ function openExportModal() {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 // ---- CSV export ----
@@ -978,6 +1301,7 @@ function exportCSV(filters) {
 
     Object.entries(entries).forEach(([exId, entry]) => {
       if (f.exerciseId && exId !== f.exerciseId) return;
+      if (!entryHasData(entry)) return; // skip stray entries with nothing actually logged
       const ex = exMap[exId];
       const name = ex ? ex.name : exId;
       const trackType = ex ? ex.trackType : "";
@@ -1003,6 +1327,14 @@ function exportCSV(filters) {
       rows.push([date, dayLabel, "", "finisher-note", "", "", "", dayLog.finisherNote]);
     }
   });
+
+  if (!f.exerciseId && (!f.days || f.days.has("run"))) {
+    rows.push(...runCsvRows(f.from, f.to));
+    // Keep everything in date order (sort is stable, so same-day rows keep their order).
+    const header = rows.shift();
+    rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    rows.unshift(header);
+  }
 
   if (rows.length === 1) {
     alert("No logged sessions match those filters.");
@@ -1035,14 +1367,17 @@ function downloadFile(content, filename, mime) {
 
 // ---- One-time data migration ----
 // Program officially started 2026-08-17. This silently purges anything
-// logged before that, plus any log entries pointing at exercise IDs that no
+// logged before that, any log entries pointing at exercise IDs that no
 // longer exist anywhere in the current library (leftover debris from the
-// sync-race incident before v7). Runs once automatically on load, guarded by
-// a flag so it never runs again — no permanent button, no ongoing UI. Safe
-// to leave in: if there's nothing to clean (e.g. on a second device after
-// the first already cleaned the shared store), it's a silent no-op.
+// sync-race incident before v7), and any entries with no real data in them
+// (e.g. a weight box touched without ever entering reps, left over from
+// before updateSet started auto-cleaning those). Runs once automatically on
+// load, guarded by a flag so it never runs again — no permanent button, no
+// ongoing UI. Safe to leave in: if there's nothing to clean (e.g. on a
+// second device after the first already cleaned the shared store), it's a
+// silent no-op.
 const CLEANUP_FLOOR_DATE = "2026-08-17";
-const CLEANUP_FLAG_KEY = "iron-log-cleanup-v13-done";
+const CLEANUP_FLAG_KEY = "iron-log-cleanup-v26-done";
 
 function runOneTimeCleanupIfNeeded() {
   if (localStorage.getItem(CLEANUP_FLAG_KEY)) return;
@@ -1050,25 +1385,27 @@ function runOneTimeCleanupIfNeeded() {
   const exMap = allExercises();
   const datesToRemove = Object.keys(logs).filter((d) => d < CLEANUP_FLOOR_DATE);
   let orphanedCount = 0;
+  let emptyCount = 0;
 
   Object.keys(logs).forEach((date) => {
     if (date < CLEANUP_FLOOR_DATE) return; // whole date already counted above
     const entries = logs[date].entries || {};
-    Object.keys(entries).forEach((exId) => {
+    Object.entries(entries).forEach(([exId, entry]) => {
       if (!exMap[exId]) orphanedCount++;
+      else if (!entryHasData(entry)) emptyCount++;
     });
   });
 
-  if (datesToRemove.length > 0 || orphanedCount > 0) {
+  if (datesToRemove.length > 0 || orphanedCount > 0 || emptyCount > 0) {
     datesToRemove.forEach((d) => delete logs[d]);
     Object.keys(logs).forEach((date) => {
       const entries = logs[date].entries || {};
-      Object.keys(entries).forEach((exId) => {
-        if (!exMap[exId]) delete entries[exId];
+      Object.entries(entries).forEach(([exId, entry]) => {
+        if (!exMap[exId] || !entryHasData(entry)) delete entries[exId];
       });
     });
     saveLogs(logs);
-    console.log(`Iron Log: one-time cleanup removed ${datesToRemove.length} old day(s) and ${orphanedCount} orphaned entr${orphanedCount === 1 ? "y" : "ies"}.`);
+    console.log(`Iron Log: one-time cleanup removed ${datesToRemove.length} old day(s), ${orphanedCount} orphaned entr${orphanedCount === 1 ? "y" : "ies"}, and ${emptyCount} empty entr${emptyCount === 1 ? "y" : "ies"}.`);
   }
 
   localStorage.setItem(CLEANUP_FLAG_KEY, "1");
@@ -1098,7 +1435,8 @@ function renderProgress() {
   const currentEx = exMap[state.progressExId];
   const isWeighted = currentEx && currentEx.trackType === "weight";
   const zoneTracked = currentEx && isZoneTracked(currentEx);
-  const metricLabel = currentEx && currentEx.trackType === "time" ? "sec held"
+  const metricLabel = currentEx && currentEx.customUnit ? currentEx.customUnit
+    : currentEx && currentEx.trackType === "time" ? "sec held"
     : zoneTracked ? "total min (all zones)"
     : currentEx && currentEx.trackType === "duration" ? "min"
     : isWeighted ? "lbs" : "reps";
@@ -1194,8 +1532,8 @@ function renderLineChart(points) {
 function openWorkoutSummaryModal(dayId) {
   const date = state.selectedDate;
   const dayLabel = DAYS.find((d) => d.id === dayId)?.label || "Workout";
-  const dayExercises = library[dayId] || [];
-  const finisherExercises = library[finisherKey(dayId)] || [];
+  const dayExercises = getExerciseList(date, dayId);
+  const finisherExercises = getExerciseList(date, finisherKey(dayId));
   const todayLog = logs[date] || { dayId, entries: {} };
 
   const overlay = el(`<div class="modal-overlay"></div>`);
@@ -1228,6 +1566,9 @@ function openWorkoutSummaryModal(dayId) {
         const prefix = isZoneTracked(ex) ? `Z${i + 1}: ` : "";
         return `<span class="summary-set ${missing ? "missing" : ""}">${missing ? "not logged" : `${prefix}${weightPart}${s.reps} ${unit}`}</span>`;
       }).join(`<span class="summary-sep">·</span>`);
+      const totalLine = isZoneTracked(ex)
+        ? `<div class="summary-total">Total: ${sets.reduce((sum, s) => sum + (s.reps || 0), 0)} min</div>`
+        : "";
 
       row.innerHTML = `
         <div class="summary-row-top">
@@ -1235,6 +1576,7 @@ function openWorkoutSummaryModal(dayId) {
           <span class="summary-status">${allTopped ? "✓ topped out" : hasAnyValue ? "" : "⚠ not started"}</span>
         </div>
         <div class="summary-sets">${line}</div>
+        ${totalLine}
       `;
       list.appendChild(row);
     });
@@ -1266,6 +1608,7 @@ function openWorkoutSummaryModal(dayId) {
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
   modal.querySelector("#summary-close-btn").onclick = () => document.body.removeChild(overlay);
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 // ---- Import modal ----
@@ -1330,6 +1673,7 @@ function openImportModal() {
     }
 
     const validDays = new Set(EXERCISE_DAYS.map((d) => d.id));
+    const date = state.selectedDate;
     let added = 0, updated = 0, skipped = 0;
 
     items.forEach((item) => {
@@ -1346,26 +1690,24 @@ function openImportModal() {
       const targets = Array.isArray(item.targets) && item.targets.length >= 1
         ? item.targets.map((t) => Number(t) || 0)
         : defaultTargets(trackType, numSets);
+      const customUnit = item.customUnit || null;
 
       if (!name || !validDays.has(day)) { skipped++; return; }
-      if (!library[day]) library[day] = [];
 
-      const existing = library[day].find((e) => bankKey(e.name) === bankKey(name));
-      if (existing) {
-        existing.weights = weights;
-        existing.type = type;
-        existing.trackType = trackType;
-        existing.targets = targets;
-        existing.numSets = numSets;
+      const currentList = getExerciseList(date, day);
+      const existingIdx = currentList.findIndex((e) => bankKey(e.name) === bankKey(name));
+      let newList;
+      if (existingIdx !== -1) {
+        newList = currentList.map((e, i) => i === existingIdx ? { ...e, weights, type, trackType, targets, numSets, customUnit } : e);
         updated++;
       } else {
-        library[day].push({ id: slugify(name), name, type, trackType, numSets, weights, targets });
+        newList = [...currentList, { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit }];
         added++;
       }
-      upsertBank({ name, type, trackType, weights, targets });
+      setExerciseList(date, day, newList);
+      upsertBank({ name, type, trackType, weights, targets, customUnit });
     });
 
-    saveLibrary(library);
     resultBox.textContent = `Added ${added}, updated ${updated}${skipped ? `, skipped ${skipped} (missing name or invalid day)` : ""}.`;
     resultBox.className = "import-result success";
     render();
@@ -1373,6 +1715,7 @@ function openImportModal() {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
   textarea.focus();
 }
 
@@ -1393,6 +1736,16 @@ function setNumberRow(container, count, values, labelFn) {
 function readNumberRow(container) {
   return Array.from(container.querySelectorAll("input")).map((i) => Number(i.value) || 0);
 }
+// Safety net so weights/targets always match numSets exactly at save time,
+// regardless of whether the rebuild-on-input handler had a chance to fire —
+// pads by repeating the last value, or truncates if there are extras.
+function padToLength(arr, n, fallback) {
+  const result = arr.slice(0, n);
+  while (result.length < n) {
+    result.push(result.length ? result[result.length - 1] : fallback);
+  }
+  return result;
+}
 
 // ---- Bank Manager modal ----
 // Prunes the exercise bank (the "From your bank" quick-pick list) directly.
@@ -1404,6 +1757,11 @@ function openBankManagerModal(onClose) {
     <div class="modal">
       <h3>Manage Exercise Bank</h3>
       <div class="field-hint" style="margin-bottom:14px;">Removing something here only affects this quick-pick list — it won't touch exercises already placed on any day, or any logged history.</div>
+      <div class="modal-actions" style="margin-bottom:16px;">
+        <button class="btn-secondary" id="bank-export-btn" style="flex:1">⬇ Export Backup</button>
+        <button class="btn-secondary" id="bank-import-btn" style="flex:1">⬆ Restore Backup</button>
+      </div>
+      <input type="file" id="bank-import-file" accept="application/json" style="display:none" />
       <div id="bank-manager-list"></div>
       <div class="modal-actions">
         <button class="btn-primary" id="bank-manager-close-btn" style="flex:1">Done</button>
@@ -1440,6 +1798,51 @@ function openBankManagerModal(onClose) {
   }
   renderList();
 
+  modal.querySelector("#bank-export-btn").onclick = () => {
+    const entryCount = Object.keys(bank).length;
+    if (entryCount === 0) {
+      alert("Bank is empty — nothing to back up yet.");
+      return;
+    }
+    const data = JSON.stringify(bank, null, 2);
+    downloadFile(data, `bank-backup-${todayISO()}.json`, "application/json");
+  };
+
+  const fileInput = modal.querySelector("#bank-import-file");
+  modal.querySelector("#bank-import-btn").onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (e) {
+        alert("That file doesn't look like a valid backup — couldn't parse it as JSON.");
+        return;
+      }
+      let added = 0, updated = 0, skipped = 0;
+      Object.values(parsed).forEach((entry) => {
+        if (!entry || !entry.name) { skipped++; return; }
+        const key = bankKey(entry.name);
+        if (bank[key]) updated++; else added++;
+        bank[key] = {
+          name: entry.name,
+          type: entry.type || "other",
+          trackType: entry.trackType || "weight",
+          weights: Array.isArray(entry.weights) ? entry.weights : [20, 20, 20],
+          targets: Array.isArray(entry.targets) ? entry.targets : null,
+        };
+      });
+      saveBank(bank);
+      renderList();
+      alert(`Restored: ${added} added, ${updated} updated${skipped ? `, ${skipped} skipped (missing name)` : ""}.`);
+    };
+    reader.readAsText(file);
+    fileInput.value = "";
+  };
+
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) { document.body.removeChild(overlay); if (onClose) onClose(); } };
   modal.querySelector("#bank-manager-close-btn").onclick = () => {
@@ -1448,6 +1851,7 @@ function openBankManagerModal(onClose) {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
 }
 
 function openAddExerciseModal(explicitListKey) {
@@ -1486,6 +1890,10 @@ function openAddExerciseModal(explicitListKey) {
         <label>Number of sets</label>
         <input type="number" id="ex-num-sets" min="1" value="3" style="width:80px" />
       </div>
+      <div class="form-row" id="ex-custom-unit-row">
+        <label>Custom unit label (optional)</label>
+        <input type="text" id="ex-custom-unit" placeholder="e.g. laps, rounds — leave blank for default" />
+      </div>
       <div id="ex-weight-fields">
         <div class="form-row">
           <label>Progression type</label>
@@ -1504,6 +1912,7 @@ function openAddExerciseModal(explicitListKey) {
         <label id="ex-targets-label">Target reps per set</label>
         <div class="weights-row" id="ex-targets-row"></div>
         <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
+        <div class="zone-total" id="ex-zone-total" style="display:none"></div>
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="cancel-btn">Cancel</button>
@@ -1530,6 +1939,10 @@ function openAddExerciseModal(explicitListKey) {
   const bankSelect = modal.querySelector("#ex-bank");
   const trackSelect = modal.querySelector("#ex-track");
   const weightFields = modal.querySelector("#ex-weight-fields");
+  const customUnitRow = modal.querySelector("#ex-custom-unit-row");
+  const customUnitInput = modal.querySelector("#ex-custom-unit");
+
+  const zoneTotalEl = modal.querySelector("#ex-zone-total");
 
   function refreshBankOptions() {
     const current = bankSelect.value;
@@ -1540,14 +1953,27 @@ function openAddExerciseModal(explicitListKey) {
   }
   modal.querySelector("#manage-bank-btn").onclick = () => openBankManagerModal(refreshBankOptions);
 
+  function updateZoneTotal() {
+    if (trackSelect.value !== "hr_zones") {
+      zoneTotalEl.style.display = "none";
+      return;
+    }
+    const total = readNumberRow(targetsRow).reduce((sum, v) => sum + v, 0);
+    zoneTotalEl.textContent = `Total planned: ${total} min`;
+    zoneTotalEl.style.display = "block";
+  }
+  targetsRow.addEventListener("input", updateZoneTotal);
+
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
+    customUnitRow.style.display = t === "hr_zones" ? "none" : "";
     targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)"
       : t === "duration" ? "Target duration per set (minutes)"
       : t === "hr_zones" ? "Target minutes per zone"
       : "Target reps per set";
     numSetsInput.disabled = t === "hr_zones";
+    updateZoneTotal();
   }
 
   function labelFnFor(trackType) {
@@ -1557,11 +1983,11 @@ function openAddExerciseModal(explicitListKey) {
   function rebuildRows(count, weightVals, targetVals) {
     setNumberRow(weightsRow, count, weightVals, labelFnFor(trackSelect.value));
     setNumberRow(targetsRow, count, targetVals, labelFnFor(trackSelect.value));
+    updateZoneTotal();
   }
 
-  numSetsInput.onchange = () => {
+  numSetsInput.oninput = () => {
     const n = Math.max(1, Number(numSetsInput.value) || 1);
-    numSetsInput.value = n;
     const prevW = readNumberRow(weightsRow);
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
@@ -1577,6 +2003,7 @@ function openAddExerciseModal(explicitListKey) {
     const n = trackSelect.value === "hr_zones" ? 4 : Math.max(1, Number(numSetsInput.value) || 3);
     numSetsInput.value = n;
     setNumberRow(targetsRow, n, defaultTargets(trackSelect.value, n), labelFnFor(trackSelect.value));
+    updateZoneTotal();
   };
 
   updateFieldVisibility();
@@ -1590,6 +2017,7 @@ function openAddExerciseModal(explicitListKey) {
     nameInput.value = entry.name;
     typeSelect.value = entry.type;
     trackSelect.value = entry.trackType || "weight";
+    customUnitInput.value = entry.customUnit || "";
     updateFieldVisibility();
     const n = entry.trackType === "hr_zones" ? 4 : (entry.targets && entry.targets.length) || (entry.weights && entry.weights.length) || 3;
     numSetsInput.value = n;
@@ -1606,13 +2034,17 @@ function openAddExerciseModal(explicitListKey) {
     const trackType = trackSelect.value;
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
-    const weights = readNumberRow(weightsRow);
-    const targets = readNumberRow(targetsRow).map((t) => Math.max(t, 1));
+    const weights = padToLength(readNumberRow(weightsRow), numSets, 20);
+    // A 0-minute zone target is valid — it just means "not planning to spend
+    // time here." Only non-zone types need a hard floor of 1.
+    const targetFallback = trackType === "time" ? 30 : (trackType === "duration" || trackType === "hr_zones") ? 20 : 10;
+    const targets = padToLength(readNumberRow(targetsRow), numSets, targetFallback)
+      .map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
+    const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
 
-    const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets };
-    if (!library[dayId]) library[dayId] = [];
-    library[dayId].push(newEx);
-    saveLibrary(library);
+    const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit };
+    const date = state.selectedDate;
+    setExerciseList(date, dayId, [...getExerciseList(date, dayId), newEx]);
     upsertBank(newEx);
 
     if (!explicitListKey) state.selectedDayId = dayId;
@@ -1621,6 +2053,7 @@ function openAddExerciseModal(explicitListKey) {
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
   nameInput.focus();
 }
 
@@ -1629,7 +2062,8 @@ function openAddExerciseModal(explicitListKey) {
 // in place — same fields as Add Exercise, minus the bank picker and day
 // (day stays fixed; delete + re-add if you want it under a different day).
 function openEditExerciseModal(dayId, exId) {
-  const ex = (library[dayId] || []).find((e) => e.id === exId);
+  const date = state.selectedDate;
+  const ex = getExerciseList(date, dayId).find((e) => e.id === exId);
   if (!ex) return;
 
   const overlay = el(`<div class="modal-overlay"></div>`);
@@ -1654,6 +2088,10 @@ function openEditExerciseModal(dayId, exId) {
         <label>Number of sets</label>
         <input type="number" id="edit-num-sets" min="1" style="width:80px" />
       </div>
+      <div class="form-row" id="edit-custom-unit-row">
+        <label>Custom unit label (optional)</label>
+        <input type="text" id="edit-custom-unit" placeholder="e.g. laps, rounds — leave blank for default" />
+      </div>
       <div id="edit-weight-fields">
         <div class="form-row">
           <label>Progression type</label>
@@ -1672,6 +2110,7 @@ function openEditExerciseModal(dayId, exId) {
         <label id="edit-targets-label">Target reps per set</label>
         <div class="weights-row" id="edit-targets-row"></div>
         <div class="field-hint">Set these however fits — equal, ascending, or a lighter last set. Nothing is assumed.</div>
+        <div class="zone-total" id="edit-zone-total" style="display:none"></div>
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="edit-cancel-btn">Cancel</button>
@@ -1688,13 +2127,28 @@ function openEditExerciseModal(dayId, exId) {
   const targetsLabel = modal.querySelector("#edit-targets-label");
   const weightsRow = modal.querySelector("#edit-weights-row");
   const targetsRow = modal.querySelector("#edit-targets-row");
+  const zoneTotalEl = modal.querySelector("#edit-zone-total");
+  const customUnitRow = modal.querySelector("#edit-custom-unit-row");
+  const customUnitInput = modal.querySelector("#edit-custom-unit");
 
   function labelFnFor(trackType) {
     return trackType === "hr_zones" ? (i) => `Zone ${i + 1}` : (i) => `Set ${i + 1}`;
   }
 
+  function updateZoneTotal() {
+    if (trackSelect.value !== "hr_zones") {
+      zoneTotalEl.style.display = "none";
+      return;
+    }
+    const total = readNumberRow(targetsRow).reduce((sum, v) => sum + v, 0);
+    zoneTotalEl.textContent = `Total planned: ${total} min`;
+    zoneTotalEl.style.display = "block";
+  }
+  targetsRow.addEventListener("input", updateZoneTotal);
+
   trackSelect.value = ex.trackType || "weight";
   typeSelect.value = ex.type || "other";
+  customUnitInput.value = ex.customUnit || "";
   const n0 = exNumSets(ex);
   numSetsInput.value = n0;
   const w0 = ex.weights && ex.weights.length ? ex.weights : Array(n0).fill(20);
@@ -1704,11 +2158,13 @@ function openEditExerciseModal(dayId, exId) {
   function updateFieldVisibility() {
     const t = trackSelect.value;
     weightFields.style.display = t === "weight" ? "" : "none";
+    customUnitRow.style.display = t === "hr_zones" ? "none" : "";
     targetsLabel.textContent = t === "time" ? "Target hold time per set (seconds)"
       : t === "duration" ? "Target duration per set (minutes)"
       : t === "hr_zones" ? "Target minutes per zone"
       : "Target reps per set";
     numSetsInput.disabled = t === "hr_zones";
+    updateZoneTotal();
   }
   trackSelect.onchange = () => {
     updateFieldVisibility();
@@ -1716,13 +2172,13 @@ function openEditExerciseModal(dayId, exId) {
       numSetsInput.value = 4;
       setNumberRow(targetsRow, 4, defaultTargets("hr_zones", 4), labelFnFor("hr_zones"));
       setNumberRow(weightsRow, 4, Array(4).fill(20), labelFnFor("hr_zones"));
+      updateZoneTotal();
     }
   };
   updateFieldVisibility();
 
-  numSetsInput.onchange = () => {
+  numSetsInput.oninput = () => {
     const n = Math.max(1, Number(numSetsInput.value) || 1);
-    numSetsInput.value = n;
     const prevW = readNumberRow(weightsRow);
     const prevT = readNumberRow(targetsRow);
     const lastW = prevW.length ? prevW[prevW.length - 1] : 20;
@@ -1740,18 +2196,30 @@ function openEditExerciseModal(dayId, exId) {
     const trackType = trackSelect.value;
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);
-    const weights = readNumberRow(weightsRow);
-    const targets = readNumberRow(targetsRow).map((t) => Math.max(t, 1));
+    const weights = padToLength(readNumberRow(weightsRow), numSets, 20);
+    // A 0-minute zone target is valid — it just means "not planning to spend
+    // time here." Only non-zone types need a hard floor of 1.
+    const targetFallback = trackType === "time" ? 30 : (trackType === "duration" || trackType === "hr_zones") ? 20 : 10;
+    const targets = padToLength(readNumberRow(targetsRow), numSets, targetFallback)
+      .map((t) => (trackType === "hr_zones" ? Math.max(t, 0) : Math.max(t, 1)));
+    const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
+    const updatedEx = { ...ex, name, trackType, type, numSets, weights, targets, customUnit };
 
-    Object.assign(ex, { name, trackType, type, numSets, weights, targets });
-    saveLibrary(library);
-    upsertBank(ex);
+    if (isSharedList(dayId)) {
+      Object.assign(ex, updatedEx);
+      saveLibrary(library);
+    } else {
+      const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
+      setExerciseList(date, dayId, newList);
+    }
+    upsertBank(updatedEx);
 
     document.body.removeChild(overlay);
     render();
   };
 
   document.body.appendChild(overlay);
+  trapFocus(overlay);
   nameInput.focus();
 }
 

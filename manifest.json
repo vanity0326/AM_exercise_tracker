@@ -1,6 +1,6 @@
 {
-  "name": "Iron Log",
-  "short_name": "Iron Log",
+  "name": "Toni's Total Training Tracker",
+  "short_name": "Toni's Tracker",
   "description": "Personal workout tracker with cross-device sync, exercise bank, and Sunday Planner integration",
   "start_url": "./index.html",
   "scope": "./",

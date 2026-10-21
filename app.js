@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v41";
+const APP_VERSION = "v42";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -237,7 +237,7 @@ async function pullRemote(isInitial) {
     const res = await fetch(REMOTE_ENDPOINT, { cache: "no-store" });
     if (!res.ok) throw new Error("pull failed: " + res.status);
     const remote = await res.json();
-    if (remote && (remote.library || remote.logs || remote.bank)) {
+    if (remote && (remote.library || remote.logs || remote.bank || remote.classes)) {
       // If this device wrote something locally more recently than the remote
       // copy was saved, trust the local copy and push it up instead of
       // clobbering a change that hasn't finished syncing yet (e.g. a quick
@@ -253,6 +253,7 @@ async function pullRemote(isInitial) {
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
       logs = remote.logs || {};
       bank = remote.bank || {};
+      classes = remote.classes || [];
       // Older copies of the sync function didn't store the marathon plan —
       // if the remote has none, keep this device's copy (it gets pushed up
       // on the next save) instead of wiping it.
@@ -260,6 +261,7 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_LIB, JSON.stringify(library));
       localStorage.setItem(LS_LOGS, JSON.stringify(logs));
       localStorage.setItem(LS_BANK, JSON.stringify(bank));
+      localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       setSyncStatus("synced");
@@ -287,7 +289,7 @@ async function pushRemote() {
     const res = await fetch(REMOTE_ENDPOINT, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ library, logs, bank, marathon }),
+      body: JSON.stringify({ library, logs, bank, marathon, classes }),
     });
     if (!res.ok) throw new Error("push failed: " + res.status);
     setSyncStatus("synced");
@@ -328,7 +330,7 @@ function entryHasData(entry) {
 function dayLogHasRealData(dayLog) {
   if (!dayLog) return false;
   const hasEntry = Object.values(dayLog.entries || {}).some((e) => entryHasData(e));
-  return hasEntry || !!dayLog.note || !!dayLog.finisherNote;
+  return hasEntry || !!dayLog.note || !!dayLog.finisherNote || Object.values(dayLog.classSessions || {}).some(s => s.classId || s.actual || s.notes);
 }
 
 function allExercises() {
@@ -479,6 +481,7 @@ function render() {
   if (state.tab === "today") app.appendChild(renderToday());
   if (state.tab === "run") app.appendChild(renderRun());
   if (state.tab === "history") app.appendChild(renderHistory());
+  if (state.tab === "classes") app.appendChild(renderClasses());
   if (state.tab === "progress") app.appendChild(renderProgress());
 
   if (state.tab !== "run") app.appendChild(renderFab());
@@ -525,7 +528,7 @@ function setSyncStatus(next) {
 
 function renderTabs() {
   const wrap = el(`<div class="tabs"></div>`);
-  [["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
+  [["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
     const btn = el(`<button class="tab-btn ${state.tab === id ? "active" : ""}">${label}</button>`);
     btn.onclick = () => { state.tab = id; render(); };
     wrap.appendChild(btn);
@@ -610,6 +613,7 @@ function renderToday() {
     render();
   }));
   wrap.appendChild(header);
+  wrap.appendChild(renderDayClassSection(state.selectedDate));
 
   // Marathon plan: today's prescribed run (if the plan is set up and this
   // date falls inside it). Independent of the lifting day type below.
@@ -1171,6 +1175,15 @@ function renderHistory() {
   const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
   exportBtn.onclick = openExportModal;
   wrap.appendChild(exportBtn);
+  const historicAddBtn = el(`<button class="summary-btn" style="margin:0 0 14px 8px;">+ Add Past Class</button>`);
+  historicAddBtn.onclick = openHistoricClassEntry;
+  wrap.appendChild(historicAddBtn);
+  const missingToggle = el(`<label style="display:block;margin:0 0 12px"><input type="checkbox" id="cl-missing-filter"> Show only workouts missing a class</label>`);
+  missingToggle.querySelector('input').onchange = () => {
+    const only = missingToggle.querySelector('input').checked;
+    wrap.querySelectorAll('.hist-card[data-missing-class]').forEach(card => { card.hidden = only && card.dataset.missingClass !== 'true'; });
+  };
+  wrap.appendChild(missingToggle);
 
   if (dates.length === 0) {
     wrap.appendChild(el(`<div class="empty-state">No sessions logged yet.</div>`));
@@ -1212,6 +1225,9 @@ function renderHistory() {
     if (dayLog.finisherNote) {
       card.appendChild(el(`<div class="hist-line"><b>🏃 Cardio Finisher:</b> ${dayLog.finisherNote}</div>`));
     }
+    const histIds = Object.entries(dayLog.entries || {}).filter(([,e]) => entryHasData(e)).map(([id])=>id);
+    card.dataset.missingClass = String(histIds.some(id => !logs[date]?.classSessions?.[id]?.classId));
+    attachHistoryClassButtons(card, date, dayLog, exMap);
     wrap.appendChild(card);
   });
 

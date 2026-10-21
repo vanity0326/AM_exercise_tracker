@@ -34,6 +34,7 @@ export default async (req) => {
       library: body.library || {},
       logs: body.logs || {},
       bank: body.bank || {},
+      classes: body.classes || [],
       marathon: body.marathon || null,
       updatedAt: new Date().toISOString(),
     };

@@ -1219,6 +1219,24 @@ function renderHistory() {
         : "";
       card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}${totalStr}</div>`));
     });
+    // Show only classes actually associated with a saved workout session.
+    // A class existing in the library alone never counts as completed.
+    const completedClassSessions = dayLog.classSessions || {};
+    Object.entries(completedClassSessions).forEach(([exerciseId, session]) => {
+      if (!session?.classId) return;
+      const completedClass = classFor(session.classId);
+      if (!completedClass) return;
+      const exercise = exMap[exerciseId];
+      const exerciseName = session.exerciseName || exercise?.name || '';
+      const summary = el(`<div class="cl-completed-summary" aria-label="Completed guided class">
+        <span class="cl-completed-check" aria-hidden="true">✓</span>
+        <div class="cl-completed-text">
+          <strong>${safeText(classLabel(completedClass))}</strong>
+          <small>${safeText([exerciseName, completedClass.platform, 'Class completed'].filter(Boolean).join(' · '))}</small>
+        </div>
+      </div>`);
+      card.appendChild(summary);
+    });
     if (dayLog.note) {
       card.appendChild(el(`<div class="hist-line"><b>Notes:</b> ${dayLog.note}</div>`));
     }

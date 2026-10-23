@@ -230,6 +230,7 @@ function upsertBank(ex) {
 // background so the same data shows up on every device.
 const REMOTE_ENDPOINT = "/api/data";
 let pushTimer = null;
+let pushChain = Promise.resolve(); // serialize writes so an older in-flight push cannot finish last
 let suppressPush = false; // true while applying a just-pulled remote copy, so we don't immediately push it back
 
 async function pullRemote(isInitial) {
@@ -244,19 +245,36 @@ async function pullRemote(isInitial) {
       // refresh right after tapping something).
       const remoteTime = remote.updatedAt ? Date.parse(remote.updatedAt) : 0;
       const localTime = getLocalUpdatedAt();
-      if (localTime > remoteTime) {
+      if (localTime > 0 && localTime >= remoteTime) {
+        // A local save may have happened just before this response (timestamps
+        // can tie within a millisecond). Never replace it with the remote copy.
         setSyncStatus("syncing");
         pushRemote();
         return;
       }
+      const localClassesBeforePull = Array.isArray(classes) ? classes : [];
+      const remoteHasClasses = Array.isArray(remote.classes);
+      const remoteClasses = remoteHasClasses ? remote.classes : [];
+      let repairRemoteClasses = !remoteHasClasses;
       suppressPush = true;
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
       logs = remote.logs || {};
       bank = remote.bank || {};
-      classes = remote.classes || [];
+      if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
+        // An older backend or stale/empty remote payload must not wipe classes
+        // already stored on this device. Preserve them and repair remote below.
+        classes = localClassesBeforePull;
+        repairRemoteClasses = true;
+      } else {
+        const mergedClasses = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
+        localClassesBeforePull.forEach(c => {
+          if (c && c.id && !mergedClasses.has(c.id)) mergedClasses.set(c.id, c);
+        });
+        classes = [...mergedClasses.values()];
+        if (classes.length > remoteClasses.length) repairRemoteClasses = true;
+      }
       // Older copies of the sync function didn't store the marathon plan —
-      // if the remote has none, keep this device's copy (it gets pushed up
-      // on the next save) instead of wiping it.
+      // if the remote has none, keep this device's copy instead of wiping it.
       if (remote.marathon) marathon = { ...structuredClone(DEFAULT_MARATHON), ...remote.marathon };
       localStorage.setItem(LS_LIB, JSON.stringify(library));
       localStorage.setItem(LS_LOGS, JSON.stringify(logs));
@@ -264,7 +282,12 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
-      setSyncStatus("synced");
+      if (repairRemoteClasses) {
+        touchLocalUpdatedAt();
+        schedulePush();
+      } else {
+        setSyncStatus("synced");
+      }
       render();
     } else if (isInitial) {
       // Nothing saved remotely yet — seed it with whatever's on this device.
@@ -284,18 +307,27 @@ function schedulePush() {
   pushTimer = setTimeout(pushRemote, 1200);
 }
 
-async function pushRemote() {
-  try {
-    const res = await fetch(REMOTE_ENDPOINT, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ library, logs, bank, marathon, classes }),
-    });
-    if (!res.ok) throw new Error("push failed: " + res.status);
-    setSyncStatus("synced");
-  } catch (e) {
-    setSyncStatus(navigator.onLine ? "error" : "offline");
-  }
+function pushRemote() {
+  // Serialize writes. Each queued write reads the latest in-memory state when
+  // it begins, preventing overlapping requests from leaving an older snapshot
+  // as the final cloud copy.
+  const write = async () => {
+    try {
+      const res = await fetch(REMOTE_ENDPOINT, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ library, logs, bank, marathon, classes }),
+      });
+      if (!res.ok) throw new Error("push failed: " + res.status);
+      setSyncStatus("synced");
+      return true;
+    } catch (e) {
+      setSyncStatus(navigator.onLine ? "error" : "offline");
+      return false;
+    }
+  };
+  pushChain = pushChain.then(write, write);
+  return pushChain;
 }
 
 // ---------- State ----------

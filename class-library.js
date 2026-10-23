@@ -38,7 +38,32 @@ function renderClasses() {
   wrap.querySelector('#cl-add').onclick=()=>openClassEditor();
   wrap.querySelector('#cl-export').onclick=()=>downloadFile(JSON.stringify({format:'iron-log-classes-v42',classes,sessionLinks:sessionItems()},null,2),'class-library-backup-'+todayISO()+'.json','application/json');
   wrap.querySelector('#cl-import').onclick=()=>wrap.querySelector('#cl-file').click();
-  wrap.querySelector('#cl-file').onchange=async e=>{try {const data=JSON.parse(await e.target.files[0].text()); if(!Array.isArray(data.classes))throw Error('Not a class library export'); if(!confirm(`Import ${data.classes.length} classes? Existing classes with the same ID will be replaced. Existing workout history is untouched.`))return; const byId=new Map(classes.map(c=>[c.id,c])); data.classes.forEach(c=>{if(c.id&&c.title)byId.set(c.id,c)}); classes=[...byId.values()]; saveClasses();render();}catch(err){alert('Import failed: '+err.message)}};
+  wrap.querySelector('#cl-file').onchange=async e=>{try {
+    const file=e.target.files?.[0]; if(!file)return;
+    const data=JSON.parse(await file.text());
+    if(!Array.isArray(data.classes))throw Error('Not a class library export');
+    const links=Array.isArray(data.sessionLinks)?data.sessionLinks:[];
+    if(!confirm(`Restore ${data.classes.length} classes${links.length?` and ${links.length} class-history links`:''}? Matching class IDs will be updated. Existing workout measurements and exercise sets will not be changed.`))return;
+    const byId=new Map(classes.map(c=>[c.id,c]));
+    data.classes.forEach(c=>{if(c.id&&c.title)byId.set(c.id,c)});
+    classes=[...byId.values()];
+    let restoredLinks=0;
+    links.forEach(link=>{
+      if(!link?.date||!link?.exerciseId||!link?.classId)return;
+      if(!logs[link.date])logs[link.date]={dayId:'cardio',entries:{}};
+      if(!logs[link.date].classSessions)logs[link.date].classSessions={};
+      const old=logs[link.date].classSessions[link.exerciseId]||{};
+      const merged={...link,...old};
+      // Restore missing fields from the backup without replacing newer, non-empty session notes or effort values.
+      ['classId','target','actual','modifications','notes','repeat','exerciseName'].forEach(k=>{
+        if(old[k]===undefined||old[k]===null||old[k]==='')merged[k]=link[k]??old[k]??'';
+      });
+      logs[link.date].classSessions[link.exerciseId]=merged;
+      restoredLinks++;
+    });
+    saveLogs(logs); saveClasses(); render();
+    alert(`Restore complete: ${data.classes.length} class records available; ${restoredLinks} class-history links restored or checked. Existing workout measurements were preserved.`);
+  }catch(err){alert('Import failed: '+err.message)}finally{e.target.value=''}};
   const platform=wrap.querySelector('#cl-platform'); [...new Set(classes.map(c=>c.platform).filter(Boolean))].sort().forEach(p=>platform.insertAdjacentHTML('beforeend',`<option value="${safeText(p)}">${safeText(p)}</option>`));
   const draw=()=>{
     const q=wrap.querySelector('#cl-search').value.toLowerCase(), status=wrap.querySelector('#cl-status').value, plat=platform.value;

@@ -246,8 +246,16 @@ async function pullRemote(isInitial) {
       const remoteTime = remote.updatedAt ? Date.parse(remote.updatedAt) : 0;
       const localTime = getLocalUpdatedAt();
       if (localTime > 0 && localTime >= remoteTime) {
-        // A local save may have happened just before this response (timestamps
-        // can tie within a millisecond). Never replace it with the remote copy.
+        // Keep newer local workout data, but ALWAYS merge the class catalog
+        // from the remote snapshot before pushing. The timestamp covers all
+        // data, so a recent workout edit on a device with an empty/stale local
+        // class catalog must not erase classes saved by another tab/device.
+        const localClasses = Array.isArray(classes) ? classes : [];
+        const remoteClasses = Array.isArray(remote.classes) ? remote.classes : [];
+        const merged = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
+        localClasses.forEach(c => { if (c && c.id) merged.set(c.id, c); });
+        classes = [...merged.values()];
+        localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
         setSyncStatus("syncing");
         pushRemote();
         return;
@@ -2307,6 +2315,21 @@ function openEditExerciseModal(dayId, exId) {
   trapFocus(overlay);
   nameInput.focus();
 }
+
+// Keep open tabs on the same Class Library snapshot. Without this, a tab
+// left open with an older in-memory `classes` array could push that stale list
+// after another tab had added classes, making them disappear on refresh.
+window.addEventListener("storage", (event) => {
+  if (event.key === "iron-log-classes-v42" && event.newValue) {
+    try {
+      const next = JSON.parse(event.newValue);
+      if (Array.isArray(next)) {
+        classes = next;
+        if (state.tab === "classes") render();
+      }
+    } catch (e) { console.warn("Could not read updated Class Library from another tab", e); }
+  }
+});
 
 // ---- Boot ----
 window.addEventListener("online", () => {

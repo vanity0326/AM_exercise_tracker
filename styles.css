@@ -25,6 +25,9 @@
 .quick-link span { color: var(--text-dim); font-size: 12px; font-weight: 500; }
 .quick-link strong { margin-left: auto; color: var(--primary); font-size: 18px; }
 .quick-link:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.rehab-quick-link { background: #E3F2EE; border-color: #65A897; color: #174E45; }
+.rehab-quick-link span { color: #38665F; }
+.rehab-quick-link strong { color: #176B5A; }
 
 body {
   margin: 0;

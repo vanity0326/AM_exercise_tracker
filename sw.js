@@ -1,4 +1,4 @@
-const CACHE_NAME = "iron-log-v42-5-1";
+const CACHE_NAME = "iron-log-v43";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,9 +6,9 @@ const ASSETS = [
   "./planner.html",
   "./body.html",
   "./styles.css",
-  "./marathon.js?v=42.5",
-  "./app.js?v=42.5",
-  "./class-library.js?v=42.5",
+  "./marathon.js?v=43",
+  "./app.js?v=43",
+  "./class-library.js?v=43",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

@@ -1,0 +1,8 @@
+Toni's Total Training Tracker v42.5.1
+
+Deployment
+1. In Netlify, open the existing Exercise Planner site and choose Deploy manually.
+2. Upload the contents of this ZIP so index.html is at the publish root (do not upload the ZIP as a nested folder).
+3. After deploy, open index.html and use the Achilles Rehab button near the top. It opens achilles.html.
+
+The change makes the existing rehab page easier to find and adds it to the offline cache. Tracker and rehab saved-data keys and storage logic are unchanged. This ZIP does not deploy itself.

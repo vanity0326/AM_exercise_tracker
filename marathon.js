@@ -407,7 +407,7 @@ function renderRunStrip(iso) {
   const savedAudioClass = marathonAudioClassSessionFor(iso);
   const selectedAudioClass = classFor(savedAudioClass?.session?.classId);
   const audioClassButton = el(`<button type="button" class="btn-secondary run-class-btn"></button>`);
-  audioClassButton.textContent = selectedAudioClass ? `Audio class: ${classLabel(selectedAudioClass)}` : "+ Assign audio class";
+  audioClassButton.textContent = selectedAudioClass ? classLabel(selectedAudioClass) : "+ Assign audio class";
   audioClassButton.setAttribute("aria-label", `${selectedAudioClass ? "Change" : "Assign"} audio class for Marathon walk/run`);
   audioClassButton.onclick = () => editClassSession(iso, MARATHON_RUN_CLASS_ID, "Marathon walk/run", savedAudioClass?.session);
   card.appendChild(audioClassButton);
@@ -880,3 +880,4 @@ function runCsvRows(from, to) {
     return [d, "Run", r.label || "Run", "run", "", "", r.miles ?? (r.done ? "done" : ""), notes];
   });
 }
+

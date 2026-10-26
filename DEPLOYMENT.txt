@@ -1,5 +1,9 @@
-Toni's Total Training Tracker v49
+Toni's Total Training Tracker v50
 
-Local preview only; not deployed. LOG offers a date-specific audio-class assignment for every scheduled marathon walk/run session, using the saved Class Library. At a Glance displays Marathon walk/run and its audio class separately from other cardio activities. Existing saved walk/run class assignments are recognized for that date.
+Local build for review. Not deployed.
 
-Publishing this update would replace the live app files and requires the user's explicit approval. No live site changes have been made.
+The home screen now opens to a week-at-a-glance view. The view reads the planner's saved day plans, cardio activities and assigned classes, marathon walk/run prescriptions and audio classes, and the alternating Achilles PT schedule. It can navigate between weeks and opens the browser print dialog in landscape layout.
+
+Publishing replaces the live app files and is not authorized by this package. Deploy only after the user explicitly approves. Existing storage keys are retained; no data migration is required.
+
+For Netlify manual upload, place the contents of this folder at the publish root so index.html is at the root.

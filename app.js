@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v49";
+const APP_VERSION = "v50";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -353,18 +353,38 @@ let state = {
 // The standalone file preview uses the live site's verified Monday snapshot
 // when it has no local tracker data. This sample stays in memory only and is
 // never written to localStorage or used on the deployed HTTPS app.
-if (location.protocol === "file:" && Object.keys(logs).length === 0 && classes.length === 0) {
-  const previewDate = "2026-10-26";
-  state.selectedDate = previewDate;
-  logs[previewDate] = {
-    dayId: "lower",
-    entries: {},
-    plan: { primary: "lower" },
-    classSessions: {
-      previewBike: { exerciseName: "Bike (Recumbent)", classId: "preview-cycle-ep03-tyrell" }
-    }
+if (location.protocol === "file:" && Object.keys(logs).length === 0 && classes.length === 0 && !marathon.settings && !Object.keys(marathon.runs || {}).length) {
+  const previewWeek = "2026-10-26";
+  state.selectedDate = previewWeek;
+  const classIds = {
+    cycle3:"preview-cycle-ep03-tyrell", elliptical98:"preview-walk-run-ep98-sherica",
+    walkRun2:"preview-walk-run-ep02-am", walkRun1:"preview-walk-run-ep01-am",
+    cycle288:"preview-cycle-ep288-tyrell", walkRun10:"preview-walk-run-ep10-sam",
   };
-  classes = [{ id: "preview-cycle-ep03-tyrell", title: "Cycle", episode: "03", instructor: "Tyrell", exercise: "Recumbent Bike" }];
+  classes = [
+    { id:classIds.cycle3, title:"Cycle", episode:"03", instructor:"Tyrell", exercise:"Recumbent Bike" },
+    { id:classIds.elliptical98, title:"Walk/Run", episode:"98", instructor:"Sherica", exercise:"Elliptical" },
+    { id:classIds.walkRun2, title:"Walk/Run", episode:"02", instructor:"AM", exercise:"Walking Outside" },
+    { id:classIds.walkRun1, title:"Walk/Run", episode:"01", instructor:"AM", exercise:"Walking Outside" },
+    { id:classIds.cycle288, title:"Cycle", episode:"288", instructor:"Tyrell", exercise:"Recumbent Bike" },
+    { id:classIds.walkRun10, title:"Walk/Run", episode:"10", instructor:"Sam", exercise:"Elliptical" },
+  ];
+  const sampleDay = (dayId, primary, extra = {}) => ({ dayId, entries:{}, plan:{ primary }, ...extra });
+  logs[previewWeek] = sampleDay("lower", "lower", { classSessions:{ previewBike:{ exerciseName:"Bike (Recumbent)", classId:classIds.cycle3 } } });
+  logs[addDaysIso(previewWeek,1)] = sampleDay("cardio", "cardio", {
+    lists:{ cardio:[{id:"preview-swim",name:"Swim (Laps)"},{id:"preview-elliptical",name:"Elliptical"}] },
+    classSessions:{ "preview-elliptical":{ exerciseName:"Elliptical", classId:classIds.elliptical98 }, [MARATHON_RUN_CLASS_ID]:{ exerciseName:"Marathon walk/run", classId:classIds.walkRun2 } }
+  });
+  logs[addDaysIso(previewWeek,2)] = sampleDay("upper", "upper", { classSessions:{ [MARATHON_RUN_CLASS_ID]:{ exerciseName:"Marathon walk/run", classId:classIds.walkRun1 } } });
+  logs[addDaysIso(previewWeek,3)] = sampleDay("core", "core", { classSessions:{ [MARATHON_RUN_CLASS_ID]:{ exerciseName:"Marathon walk/run", classId:classIds.walkRun2 } } });
+  logs[addDaysIso(previewWeek,4)] = sampleDay("mobility", "mob", { classSessions:{ previewCycleFriday:{ exerciseName:"Bike (Recumbent)", classId:classIds.cycle288 } } });
+  logs[addDaysIso(previewWeek,5)] = sampleDay("cardio", "cardio", {
+    lists:{ cardio:[{id:"preview-saturday-elliptical",name:"Elliptical"}] },
+    classSessions:{ "preview-saturday-elliptical":{ exerciseName:"Elliptical", classId:classIds.walkRun10 }, [MARATHON_RUN_CLASS_ID]:{ exerciseName:"Marathon walk/run", classId:classIds.walkRun2 } }
+  });
+  logs[addDaysIso(previewWeek,6)] = sampleDay("cardio", "swim", { lists:{ cardio:[{id:"preview-sunday-swim",name:"Swim (Laps)"}] } });
+  if (!marathon.settings) marathon.settings = { startDate:previewWeek, raceName:"", raceDate:"" };
+  if (!marathon.sequence.length) marathon.sequence = [{ w:1 }];
 }
 
 // ---------- Helpers ----------
@@ -531,6 +551,7 @@ const app = document.getElementById("app");
 
 function render() {
   app.innerHTML = "";
+  app.classList.toggle("app-overview-mode", state.tab === "overview");
   app.appendChild(renderHeader());
   app.appendChild(renderOfflineBanner());
   app.appendChild(renderTabs());
@@ -630,43 +651,23 @@ function overviewCardioIcon(name) {
 function overviewPT(date) {
   const dt = new Date(date + "T12:00:00");
   const weekday = (dt.getDay() + 6) % 7;
-  if (weekday % 2 === 0) return { title:"Towel exercise day", minutes:"9 MIN", items:[["Towel toe curls and uncurls","3 minutes × 3 rounds · 9 minutes total","Curl and uncurl the towel with your toes for the full 3 minutes each round."]] };
+  if (weekday % 2 === 0) return { title:"Towel exercise day", minutes:"9 MIN", items:[["Towel toe curls and uncurls","3 min × 3 rounds","Curl and uncurl the towel with your toes for the full 3 minutes each round."]] };
   return { title:"Stretch + balance day", minutes:"6 MIN", items:[
-    ["Straight-knee calf stretch","30 seconds × 3 sets · 1.5 minutes","Gentle stretch only; do not force the ankle forward or push into heel pain."],
-    ["Bent-knee calf stretch","30 seconds × 3 sets · 1.5 minutes","Gentle stretch; avoid deep ankle movement or pain at the heel attachment."],
-    ["Single-leg balance · firm floor","1 minute × 3 sets · 3 minutes","Stand near a sturdy counter and use support as needed. No balance board."]
+    ["Straight-knee calf stretch","30 sec × 3 (1.5 min)","Gentle stretch only; do not force the ankle forward or push into heel pain."],
+    ["Bent-knee calf stretch","30 sec × 3 (1.5 min)","Gentle stretch; avoid deep ankle movement or pain at the heel attachment."],
+    ["Single-leg balance · firm floor","1 min × 3 (3 min)","Stand near a sturdy counter and use support as needed. No balance board."]
   ]};
 }
-function renderOverview() {
-  const date = state.selectedDate;
+function overviewActivitiesFor(date) {
   const dayLog = logs[date] || {};
-  const label = overviewDayLabel(date);
-  const wrap = el(`<main class="overview-wrap"></main>`);
-  const dateTitle = new Date(date + "T12:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
-  const hero = el(`<section class="overview-hero"><div><div class="overview-eyebrow">YOUR DAY</div><h1>${dateTitle}</h1><div class="overview-quote">“${overviewQuote(date)}”</div></div><div class="overview-date-tools"></div></section>`);
-  hero.querySelector(".overview-date-tools").appendChild(renderDateButton(date, iso => { state.selectedDate = iso; state.selectedDayId = null; render(); }, "overview-date"));
-  wrap.appendChild(hero);
-
-  const grid = el(`<div class="overview-grid"><div class="overview-main"></div><aside class="overview-side"></aside></div>`);
-  const main = grid.querySelector(".overview-main");
-  const side = grid.querySelector(".overview-side");
-  const planCard = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Today's Plan</h2></div></div></section>`);
-  if (label) {
-    const icon = label === "Mobility Day" ? "🧘" : label === "Rest Day" ? "🌿" : label === "Cardio Day" ? "🏃" : label === "Core Day" ? "🧩" : "💪";
-    planCard.appendChild(el(`<div class="overview-slot"><span class="overview-icon">${icon}</span><div><strong>${label}</strong></div></div>`));
-  } else {
-    planCard.appendChild(el(`<div class="overview-empty">No day plan is saved for this date yet. Choose a date above or use Sunday Planner to set the week.</div>`));
-  }
-  main.appendChild(planCard);
-
   const run = planSlotFor(date);
-  const sessions = Object.entries(dayLog.classSessions || {}).map(([id,s]) => {
+  const sessions = Object.entries(dayLog.classSessions || {}).map(([id, saved]) => {
     const ex = allExercises()[id];
-    const c = classFor(s.classId);
-    return { id, name:s.exerciseName || ex?.name || id, cls:c, saved:s };
-  }).filter(s => s.cls);
+    const cls = classFor(saved.classId);
+    return { id, name:saved.exerciseName || ex?.name || id, cls };
+  }).filter(session => session.cls);
   const marathonAudioSession = marathonAudioClassSessionFor(date);
-  const cardioSessions = sessions.filter(s => s.id !== marathonAudioSession?.sourceId && s.id !== MARATHON_RUN_CLASS_ID && s.cls.id !== marathonAudioSession?.session?.classId && /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${s.name} ${s.cls.exercise||""} ${s.cls.title||""}`));
+  const cardioSessions = sessions.filter(session => session.id !== marathonAudioSession?.sourceId && session.id !== MARATHON_RUN_CLASS_ID && session.cls.id !== marathonAudioSession?.session?.classId && /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${session.name} ${session.cls.exercise||""} ${session.cls.title||""}`));
   const cardioExercises = (dayLog.dayId === "cardio" ? getExerciseList(date, "cardio") : []).map(ex => {
     const saved = dayLog.classSessions?.[ex.id] || {};
     const savedClass = classFor(saved.classId);
@@ -676,65 +677,108 @@ function renderOverview() {
   const planDayIds = { fullbody:"upper", mob:"mobility", "lu-core":"core", "lu-mob":"mobility", "lu-rest":"rest" };
   const plannedDayId = dayLog.plan?.primary;
   const finisherDayId = planDayIds[plannedDayId] || (DAYS.some(day => day.id === plannedDayId) ? plannedDayId : dayLog.dayId);
-  const finisherExercises = DAYS.some(day => day.id === finisherDayId)
+  const finishers = DAYS.some(day => day.id === finisherDayId)
     ? getExerciseList(date, finisherKey(finisherDayId)).map(ex => {
         const saved = dayLog.classSessions?.[ex.id] || {};
-        return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:classFor(saved.classId), finisher:true };
+        return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:classFor(saved.classId) };
       })
     : [];
-  const cardioActivities = [...cardioExercises, ...finisherExercises];
-  const hasCardioPlan = !!run?.workout || cardioActivities.length > 0 || cardioSessions.length > 0 || !!(dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary));
-  if (hasCardioPlan) {
-    const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2></div></div></section>`);
-    const appendCardioActivity = (name, cls, workout = null) => {
-      const row = el(`<div class="overview-slot"><span class="overview-icon"></span><div><strong></strong></div></div>`);
-      row.querySelector(".overview-icon").textContent = overviewCardioIcon(name);
-      row.querySelector("strong").textContent = name;
-      const content = row.querySelector("div");
-      if (cls) {
-        const classLine = document.createElement("small");
-        classLine.textContent = classLabel(cls);
-        content.appendChild(classLine);
-      }
-      if (workout) {
-        const planLine = document.createElement("small");
-        planLine.textContent = `Marathon plan · ${workout.title}${workout.detail ? ` · ${workout.detail}` : ""}`;
-        content.appendChild(planLine);
-      }
-      cardio.appendChild(row);
-    };
-    let hasListedActivity = false;
-    if (cardioActivities.length) {
-      const seenActivityIds = new Set();
-      cardioActivities.forEach((activity, i) => {
-        if (seenActivityIds.has(activity.id)) return;
-        seenActivityIds.add(activity.id);
-        appendCardioActivity(activity.name, activity.cls);
-        hasListedActivity = true;
-      });
-      const listedIds = new Set(cardioActivities.map(activity => activity.id));
-      const extraSessions = cardioSessions.filter(session => !listedIds.has(session.id));
-      extraSessions.forEach(session => appendCardioActivity(session.name, session.cls));
-      hasListedActivity = hasListedActivity || extraSessions.length > 0;
-    } else if (cardioSessions.length) {
-      cardioSessions.forEach(session => appendCardioActivity(session.name, session.cls));
-      hasListedActivity = true;
-    }
-    if (run?.workout) {
-      appendCardioActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), run.workout);
-      hasListedActivity = true;
-    } else if (!hasListedActivity && dayLog.plan?.primary) {
-      appendCardioActivity(PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary, null);
-    }
-    main.appendChild(cardio);
+  const plannedActivities = [...cardioExercises, ...finishers];
+  const activities = [];
+  const addActivity = (name, cls, detail = "") => activities.push({ name, className:cls ? classLabel(cls) : "", detail });
+  const seen = new Set();
+  plannedActivities.forEach(activity => {
+    if (seen.has(activity.id)) return;
+    seen.add(activity.id);
+    addActivity(activity.name, activity.cls);
+  });
+  cardioSessions.filter(session => !seen.has(session.id)).forEach(session => {
+    seen.add(session.id);
+    addActivity(session.name, session.cls);
+  });
+  if (run?.workout) {
+    addActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), [run.workout.title, run.workout.detail].filter(Boolean).join(" · "));
+  } else if (!activities.length && dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary)) {
+    addActivity(PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary, null);
   }
+  return activities;
+}
 
-  const pt = overviewPT(date);
-  const ptCard = el(`<section class="overview-card overview-pt"><div class="overview-card-head"><div><h2>Achilles PT</h2><p class="overview-muted">${pt.title}</p></div><span class="overview-pill gold">${pt.minutes}</span></div></section>`);
-  pt.items.forEach(([name,dose,instruction]) => ptCard.appendChild(el(`<div class="overview-pt-row"><strong>${name}</strong><span>${dose}</span><p>${instruction}</p></div>`)));
-  side.appendChild(ptCard);
-  side.appendChild(el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Recovery</h2></div></div><div class="overview-recovery"><strong>Heel check-in</strong><p>Pay attention during and after activity, and to next-morning stiffness. If symptoms trend upward or affect walking, reduce loading and contact your PT.</p></div></section>`));
-  wrap.appendChild(grid);
+function overviewWeekStart(date) {
+  const d = new Date(date + "T12:00:00");
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return partsToIso(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function overviewWeekRange(start) {
+  const end = addDaysIso(start, 6);
+  const a = new Date(start + "T12:00:00");
+  const b = new Date(end + "T12:00:00");
+  const monthDay = (d) => d.toLocaleDateString(undefined, { month:"long", day:"numeric" });
+  const left = a.getMonth() === b.getMonth()
+    ? `${a.toLocaleDateString(undefined,{month:"long"})} ${a.getDate()}`
+    : monthDay(a);
+  return `${left} – ${monthDay(b)}, ${b.getFullYear()}`;
+}
+function renderOverview() {
+  const weekStart = overviewWeekStart(state.selectedDate);
+  const wrap = el(`<main class="week-overview-wrap"></main>`);
+  const top = el(`<section class="week-overview-top"><div><div class="week-overview-kicker">WEEK AT A GLANCE</div><h1>Monday through Sunday</h1><div class="week-overview-range"></div></div><div class="week-overview-controls"></div></section>`);
+  top.querySelector(".week-overview-range").textContent = overviewWeekRange(weekStart);
+  const controls = top.querySelector(".week-overview-controls");
+  const moveWeek = (amount) => { state.selectedDate = addDaysIso(weekStart, amount * 7); render(); };
+  const previous = el(`<button type="button" class="week-overview-nav" aria-label="Previous week">‹</button>`);
+  previous.onclick = () => moveWeek(-1);
+  const choose = el(`<button type="button" class="week-overview-choose">Choose week</button>`);
+  choose.onclick = () => openDatePickerModal(state.selectedDate, iso => { state.selectedDate = iso; render(); });
+  const next = el(`<button type="button" class="week-overview-nav" aria-label="Next week">›</button>`);
+  next.onclick = () => moveWeek(1);
+  const print = el(`<button type="button" class="week-overview-print">Print</button>`);
+  print.onclick = () => window.print();
+  controls.append(previous, choose, next, print);
+  wrap.appendChild(top);
+
+  const days = el(`<div class="week-overview-days"></div>`);
+  for (let i = 0; i < 7; i++) {
+    const date = addDaysIso(weekStart, i);
+    const dateObj = new Date(date + "T12:00:00");
+    const weekday = dateObj.toLocaleDateString(undefined, { weekday:"long" });
+    const day = el(`<section class="week-overview-day"><div class="week-overview-date"><span class="week-overview-weekday"></span><strong></strong></div><div class="week-overview-plan"></div><div class="week-overview-activities"></div><div class="week-overview-pt"></div></section>`);
+    day.querySelector(".week-overview-weekday").textContent = weekday;
+    day.querySelector(".week-overview-date strong").textContent = dateObj.toLocaleDateString(undefined, { month:"short", day:"numeric" });
+    const plan = overviewDayLabel(date);
+    day.querySelector(".week-overview-plan").textContent = plan || "—";
+
+    const activityHolder = day.querySelector(".week-overview-activities");
+    const activities = overviewActivitiesFor(date);
+    if (!activities.length) {
+      const none = el(`<div class="week-overview-empty">—</div>`);
+      activityHolder.appendChild(none);
+    } else {
+      activities.forEach(activity => {
+        const row = el(`<div class="week-overview-activity"><strong></strong><div class="week-overview-class"></div><div class="week-overview-detail"></div></div>`);
+        row.querySelector("strong").textContent = activity.name;
+        if (activity.className) row.querySelector(".week-overview-class").textContent = activity.className;
+        else row.querySelector(".week-overview-class").remove();
+        if (activity.detail) row.querySelector(".week-overview-detail").textContent = activity.detail;
+        else row.querySelector(".week-overview-detail").remove();
+        activityHolder.appendChild(row);
+      });
+    }
+
+    const pt = overviewPT(date);
+    const ptHolder = day.querySelector(".week-overview-pt");
+    const ptHead = el(`<div class="week-overview-pt-title"></div>`);
+    ptHead.textContent = `ACHILLES PT · ${pt.title} · ${pt.minutes}`;
+    ptHolder.appendChild(ptHead);
+    pt.items.forEach(([name, dose]) => {
+      const item = el(`<div class="week-overview-pt-item"><strong></strong><span></span></div>`);
+      item.querySelector("strong").textContent = name;
+      item.querySelector("span").textContent = dose;
+      ptHolder.appendChild(item);
+    });
+    days.appendChild(day);
+  }
+  wrap.appendChild(days);
   return wrap;
 }
 

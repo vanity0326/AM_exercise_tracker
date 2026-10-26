@@ -661,7 +661,6 @@ function renderOverview() {
   const pt = overviewPT(date);
   const ptCard = el(`<section class="overview-card overview-pt"><div class="overview-card-head"><div><h2>Achilles PT</h2><p class="overview-muted">${pt.title}</p></div><span class="overview-pill gold">${pt.minutes}</span></div></section>`);
   pt.items.forEach(([name,dose,instruction]) => ptCard.appendChild(el(`<div class="overview-pt-row"><strong>${name}</strong><span>${dose}</span><p>${instruction}</p></div>`)));
-  ptCard.appendChild(el(`<p class="overview-footnote">Your original PT schedule was twice weekly. This alternating weekday guide is a planning aid, not a new prescription. Confirm frequency with your PT; avoid increasing running and rehab difficulty at the same time.</p>`));
   side.appendChild(ptCard);
   side.appendChild(el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Recovery</h2><p class="overview-muted">A gentle check-in</p></div><span class="overview-pill">RECOVERY</span></div><div class="overview-recovery"><strong>Notice how your heel feels</strong><p>Pay attention during and after activity, and to next-morning stiffness. If symptoms trend upward or affect walking, reduce loading and contact your PT.</p></div></section>`));
   wrap.appendChild(grid);

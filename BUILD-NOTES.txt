@@ -1,6 +1,6 @@
-Toni's Total Training Tracker v50 - weekly At a Glance
+Toni's Total Training Tracker v51 - day and week At a Glance
 
-The app opens on a Monday-through-Sunday At a Glance. Week navigation and Choose week let the user review other weeks; Print opens the browser's print dialog. Each day displays its selected plan category, cardio activities and assigned class names, the marathon walk/run prescription and its separate class, and the alternating Achilles PT routine with dosage. Strength exercise lists, quotes, recovery, category totals, completion tracking, and column headings are omitted from this overview as requested.
+The app opens on the single-day At a Glance. The Day/Week switch keeps the approved Monday-through-Sunday overview available, with week navigation, Choose week, and Print. The day view retains its date-specific motivational quote, today's plan, cardio activities and class names, Achilles PT, and recovery. The week view shows each selected plan category, cardio activities and assigned class names, the marathon walk/run prescription and its separate class, and the alternating Achilles PT routine with dosage. The weekly print omits quotes, recovery, category totals, completion tracking, and column headings as requested.
 
 The overview reads existing planner, activity, class-library, and marathon data without changing workout history or storage keys. At a Glance remains read-only. Existing app features and saved data are preserved. A local-only sample week is provided when opening the files directly with no local tracker data; it is never written to storage and is not used by the deployed HTTPS app.
 

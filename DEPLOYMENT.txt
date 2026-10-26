@@ -1,8 +1,8 @@
-Toni's Total Training Tracker v50
+Toni's Total Training Tracker v51
 
 Local build for review. Not deployed.
 
-The home screen now opens to a week-at-a-glance view. The view reads the planner's saved day plans, cardio activities and assigned classes, marathon walk/run prescriptions and audio classes, and the alternating Achilles PT schedule. It can navigate between weeks and opens the browser print dialog in landscape layout.
+The home screen opens to the single-day At a Glance. A Day/Week switch keeps the Monday-through-Sunday view available; the weekly view reads the planner's saved day plans, cardio activities and assigned classes, marathon walk/run prescriptions and audio classes, and the alternating Achilles PT schedule. The weekly view can navigate between weeks and opens the browser print dialog in landscape layout.
 
 Publishing replaces the live app files and is not authorized by this package. Deploy only after the user explicitly approves. Existing storage keys are retained; no data migration is required.
 

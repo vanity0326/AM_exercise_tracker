@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v50";
+const APP_VERSION = "v51";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -344,6 +344,7 @@ let logs = loadLogs();
 let bank = loadBank();
 let state = {
   tab: "overview",
+  overviewMode: "day",
   selectedDate: todayISO(),
   selectedDayId: null,
   progressExId: null,
@@ -552,6 +553,7 @@ const app = document.getElementById("app");
 function render() {
   app.innerHTML = "";
   app.classList.toggle("app-overview-mode", state.tab === "overview");
+  app.classList.toggle("app-week-overview-mode", state.tab === "overview" && state.overviewMode === "week");
   app.appendChild(renderHeader());
   app.appendChild(renderOfflineBanner());
   app.appendChild(renderTabs());
@@ -720,11 +722,91 @@ function overviewWeekRange(start) {
   return `${left} – ${monthDay(b)}, ${b.getFullYear()}`;
 }
 function renderOverview() {
+  return state.overviewMode === "week" ? renderWeekOverview() : renderDayOverview();
+}
+function renderOverviewModeToggle(activeMode) {
+  const toggle = el(`<div class="overview-mode-toggle" role="group" aria-label="At a Glance view"></div>`);
+  [["day","Day"],["week","Week"]].forEach(([mode,label]) => {
+    const button = el(`<button type="button" class="${mode === activeMode ? "active" : ""}" aria-pressed="${mode === activeMode}">${label}</button>`);
+    button.onclick = () => { state.overviewMode = mode; render(); };
+    toggle.appendChild(button);
+  });
+  return toggle;
+}
+function renderDayOverview() {
+  const date = state.selectedDate;
+  const label = overviewDayLabel(date);
+  const wrap = el(`<main class="overview-wrap"></main>`);
+  const dateTitle = new Date(date + "T12:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+  const hero = el(`<section class="overview-hero"><div><div class="overview-eyebrow">YOUR DAY</div><h1></h1><div class="overview-quote"></div></div><div class="overview-date-tools"></div></section>`);
+  hero.querySelector("h1").textContent = dateTitle;
+  hero.querySelector(".overview-quote").textContent = `“${overviewQuote(date)}”`;
+  const dateTools = hero.querySelector(".overview-date-tools");
+  dateTools.appendChild(renderOverviewModeToggle("day"));
+  dateTools.appendChild(renderDateButton(date, iso => { state.selectedDate = iso; state.selectedDayId = null; render(); }, "overview-date"));
+  wrap.appendChild(hero);
+
+  const grid = el(`<div class="overview-grid"><div class="overview-main"></div><aside class="overview-side"></aside></div>`);
+  const main = grid.querySelector(".overview-main");
+  const side = grid.querySelector(".overview-side");
+  const planCard = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Today's Plan</h2></div></div></section>`);
+  if (label) {
+    const icon = label === "Mobility Day" ? "🧘" : label === "Rest Day" ? "🌿" : label === "Cardio Day" ? "🏃" : label === "Core Day" ? "🧩" : "💪";
+    const slot = el(`<div class="overview-slot"><span class="overview-icon"></span><div><strong></strong></div></div>`);
+    slot.querySelector(".overview-icon").textContent = icon;
+    slot.querySelector("strong").textContent = label;
+    planCard.appendChild(slot);
+  } else {
+    planCard.appendChild(el(`<div class="overview-empty">No day plan is saved for this date yet. Choose a date above or use Sunday Planner to set the week.</div>`));
+  }
+  main.appendChild(planCard);
+
+  const activities = overviewActivitiesFor(date);
+  if (activities.length) {
+    const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2></div></div></section>`);
+    activities.forEach(activity => {
+      const row = el(`<div class="overview-slot"><span class="overview-icon"></span><div><strong></strong></div></div>`);
+      row.querySelector(".overview-icon").textContent = overviewCardioIcon(activity.name);
+      row.querySelector("strong").textContent = activity.name;
+      const content = row.querySelector(".overview-slot > div");
+      if (activity.className) {
+        const classLine = document.createElement("small");
+        classLine.textContent = activity.className;
+        content.appendChild(classLine);
+      }
+      if (activity.detail) {
+        const detailLine = document.createElement("small");
+        detailLine.textContent = activity.detail;
+        content.appendChild(detailLine);
+      }
+      cardio.appendChild(row);
+    });
+    main.appendChild(cardio);
+  }
+
+  const pt = overviewPT(date);
+  const ptCard = el(`<section class="overview-card overview-pt"><div class="overview-card-head"><div><h2>Achilles PT</h2><p class="overview-muted"></p></div><span class="overview-pill gold"></span></div></section>`);
+  ptCard.querySelector(".overview-muted").textContent = pt.title;
+  ptCard.querySelector(".overview-pill").textContent = pt.minutes;
+  pt.items.forEach(([name,dose,instruction]) => {
+    const row = el(`<div class="overview-pt-row"><strong></strong><span></span><p></p></div>`);
+    row.querySelector("strong").textContent = name;
+    row.querySelector("span").textContent = dose;
+    row.querySelector("p").textContent = instruction;
+    ptCard.appendChild(row);
+  });
+  side.appendChild(ptCard);
+  side.appendChild(el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Recovery</h2></div></div><div class="overview-recovery"><strong>Heel check-in</strong><p>Pay attention during and after activity, and to next-morning stiffness. If symptoms trend upward or affect walking, reduce loading and contact your PT.</p></div></section>`));
+  wrap.appendChild(grid);
+  return wrap;
+}
+function renderWeekOverview() {
   const weekStart = overviewWeekStart(state.selectedDate);
   const wrap = el(`<main class="week-overview-wrap"></main>`);
   const top = el(`<section class="week-overview-top"><div><div class="week-overview-kicker">WEEK AT A GLANCE</div><h1>Monday through Sunday</h1><div class="week-overview-range"></div></div><div class="week-overview-controls"></div></section>`);
   top.querySelector(".week-overview-range").textContent = overviewWeekRange(weekStart);
   const controls = top.querySelector(".week-overview-controls");
+  controls.appendChild(renderOverviewModeToggle("week"));
   const moveWeek = (amount) => { state.selectedDate = addDaysIso(weekStart, amount * 7); render(); };
   const previous = el(`<button type="button" class="week-overview-nav" aria-label="Previous week">‹</button>`);
   previous.onclick = () => moveWeek(-1);

@@ -1,0 +1,5 @@
+Toni's Total Training Tracker v44 - local preview build
+
+The landing screen opens to AT A GLANCE. LOG remains available for exercise entry. The overview reads each date's saved Sunday Planner selection, tracker class associations, marathon plan, and Achilles weekday guide. It includes a stable quote per date and print styling.
+
+This package is a local review build. The live Netlify site has not been changed or deployed. Existing tracker storage keys are preserved.

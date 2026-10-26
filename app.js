@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v43";
+const APP_VERSION = "v44";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -343,7 +343,7 @@ let library = loadLibrary();
 let logs = loadLogs();
 let bank = loadBank();
 let state = {
-  tab: "today",
+  tab: "overview",
   selectedDate: todayISO(),
   selectedDayId: null,
   progressExId: null,
@@ -518,13 +518,14 @@ function render() {
   app.appendChild(renderOfflineBanner());
   app.appendChild(renderTabs());
 
+  if (state.tab === "overview") app.appendChild(renderOverview());
   if (state.tab === "today") app.appendChild(renderToday());
   if (state.tab === "run") app.appendChild(renderRun());
   if (state.tab === "history") app.appendChild(renderHistory());
   if (state.tab === "classes") app.appendChild(renderClasses());
   if (state.tab === "progress") app.appendChild(renderProgress());
 
-  if (state.tab !== "run") app.appendChild(renderFab());
+  if (state.tab === "today") app.appendChild(renderFab());
 }
 
 function renderOfflineBanner() {
@@ -568,11 +569,102 @@ function setSyncStatus(next) {
 
 function renderTabs() {
   const wrap = el(`<div class="tabs"></div>`);
-  [["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
+  [["overview", "AT A GLANCE"], ["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
     const btn = el(`<button class="tab-btn ${state.tab === id ? "active" : ""}">${label}</button>`);
     btn.onclick = () => { state.tab = id; render(); };
     wrap.appendChild(btn);
   });
+  return wrap;
+}
+
+// Read-only day overview. It draws from the same per-date planner, tracker,
+// class, and marathon records as the other tabs; it never changes completion history.
+const OVERVIEW_QUOTES = [
+  "Small steps still move you forward.",
+  "Show up with patience; progress will follow.",
+  "A steady pace is a strong pace.",
+  "Make room for progress, and for recovery.",
+  "Consistency grows one day at a time.",
+  "You can do today's work one step at a time.",
+  "Keep going gently. Every effort counts.",
+  "Strength is built with effort and rest.",
+];
+function overviewQuote(iso) {
+  let hash = 0;
+  for (const c of iso) hash = (hash * 31 + c.charCodeAt(0)) | 0;
+  return OVERVIEW_QUOTES[Math.abs(hash) % OVERVIEW_QUOTES.length];
+}
+function overviewDayLabel(date) {
+  const day = logs[date] || {};
+  const plannedId = {upper:"upper",lower:"lower",fullbody:"upper",core:"core",mob:"mobility",rest:"rest","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
+  const id = plannedId || (day.plan?.primary ? "cardio" : day.dayId) || null;
+  const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",rest:"Rest Day",cardio:"Cardio Day"};
+  return names[id] || (day.plan?.primary ? PLAN_LABELS[day.plan.primary] || day.plan.primary : null);
+}
+function overviewPT(date) {
+  const dt = new Date(date + "T12:00:00");
+  const weekday = (dt.getDay() + 6) % 7;
+  if (weekday % 2 === 0) return { title:"Towel exercise day", minutes:"9 MIN", items:[["Towel toe curls and uncurls","3 minutes × 3 rounds · 9 minutes total","Curl and uncurl the towel with your toes for the full 3 minutes each round."]] };
+  return { title:"Stretch + balance day", minutes:"6 MIN", items:[
+    ["Straight-knee calf stretch","30 seconds × 3 sets · 1.5 minutes","Gentle stretch only; do not force the ankle forward or push into heel pain."],
+    ["Bent-knee calf stretch","30 seconds × 3 sets · 1.5 minutes","Gentle stretch; avoid deep ankle movement or pain at the heel attachment."],
+    ["Single-leg balance · firm floor","1 minute × 3 sets · 3 minutes","Stand near a sturdy counter and use support as needed. No balance board."]
+  ]};
+}
+function renderOverview() {
+  const date = state.selectedDate;
+  const dayLog = logs[date] || {};
+  const label = overviewDayLabel(date);
+  const wrap = el(`<main class="overview-wrap"></main>`);
+  const dateTitle = new Date(date + "T12:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+  const hero = el(`<section class="overview-hero"><div><div class="overview-eyebrow">YOUR DAY</div><h1>${dateTitle}</h1><div class="overview-quote">“${overviewQuote(date)}”</div></div><div class="overview-date-tools"></div></section>`);
+  hero.querySelector(".overview-date-tools").appendChild(renderDateButton(date, iso => { state.selectedDate = iso; state.selectedDayId = null; render(); }, "overview-date"));
+  wrap.appendChild(hero);
+
+  const grid = el(`<div class="overview-grid"><div class="overview-main"></div><aside class="overview-side"></aside></div>`);
+  const main = grid.querySelector(".overview-main");
+  const side = grid.querySelector(".overview-side");
+  const planCard = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Today's Plan</h2><p class="overview-muted">Your saved plan for this date</p></div><span class="overview-pill">${label ? label.toUpperCase() : "PLAN"}</span></div></section>`);
+  if (label) {
+    const planName = dayLog.plan?.primary ? (PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary) : label;
+    planCard.appendChild(el(`<div class="overview-slot"><span class="overview-icon">${label === "Mobility Day" ? "🧘" : label === "Rest Day" ? "🌿" : "💪"}</span><div><strong>${planName}</strong><small>Exercise details are in LOG.</small></div></div>`));
+  } else {
+    planCard.appendChild(el(`<div class="overview-empty">No day plan is saved for this date yet. Choose a date above or use Sunday Planner to set the week.</div>`));
+  }
+  main.appendChild(planCard);
+
+  const run = planSlotFor(date);
+  const sessions = Object.entries(dayLog.classSessions || {}).map(([id,s]) => {
+    const ex = allExercises()[id];
+    const c = classFor(s.classId);
+    return { id, name:s.exerciseName || ex?.name || id, cls:c, saved:s };
+  }).filter(s => s.cls);
+  const cardioSessions = sessions.filter(s => /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${s.name} ${s.cls.exercise||""} ${s.cls.title||""}`));
+  const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2><p class="overview-muted">One combined cardio session</p></div><span class="overview-pill">${run?.workout ? "MARATHON PLAN" : "CARDIO"}</span></div></section>`);
+  if (run?.workout) {
+    cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${run.workout.title}</strong><small>${run.workout.detail || "Marathon training session"}</small></div></div>`));
+  } else if (cardioSessions.length) {
+    cardioSessions.forEach(s => cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🚴</span><div><strong>${s.name}</strong><small>${s.cls.exercise || "Cardio session"}</small></div></div>`)));
+  } else if (dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary)) {
+    cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary}</strong><small>See the selected class in the Classes tab.</small></div></div>`));
+  } else {
+    cardio.appendChild(el(`<div class="overview-empty">No cardio session is planned for this date.</div>`));
+  }
+  if (cardioSessions.length) {
+    cardioSessions.forEach(s => {
+      const clsName = classLabel(s.cls);
+      cardio.appendChild(el(`<div class="overview-class"><span class="overview-play">▶</span><strong>${clsName}</strong></div>`));
+    });
+  }
+  main.appendChild(cardio);
+
+  const pt = overviewPT(date);
+  const ptCard = el(`<section class="overview-card overview-pt"><div class="overview-card-head"><div><h2>Achilles PT</h2><p class="overview-muted">${pt.title}</p></div><span class="overview-pill gold">${pt.minutes}</span></div></section>`);
+  pt.items.forEach(([name,dose,instruction]) => ptCard.appendChild(el(`<div class="overview-pt-row"><strong>${name}</strong><span>${dose}</span><p>${instruction}</p></div>`)));
+  ptCard.appendChild(el(`<p class="overview-footnote">Your original PT schedule was twice weekly. This alternating weekday guide is a planning aid, not a new prescription. Confirm frequency with your PT; avoid increasing running and rehab difficulty at the same time.</p>`));
+  side.appendChild(ptCard);
+  side.appendChild(el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Recovery</h2><p class="overview-muted">A gentle check-in</p></div><span class="overview-pill">RECOVERY</span></div><div class="overview-recovery"><strong>Notice how your heel feels</strong><p>Pay attention during and after activity, and to next-morning stiffness. If symptoms trend upward or affect walking, reduce loading and contact your PT.</p></div></section>`));
+  wrap.appendChild(grid);
   return wrap;
 }
 

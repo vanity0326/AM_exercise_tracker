@@ -1,8 +1,5 @@
-Toni's Total Training Tracker v43
+Toni's Total Training Tracker v44
 
-Deployment
-1. In Netlify, open the existing Exercise Planner site and choose Deploy manually.
-2. Upload the contents of this ZIP so index.html is at the publish root (do not upload the ZIP as a nested folder).
-3. After deploy, open index.html and use the Achilles Rehab button near the top. It opens achilles.html.
+This is a local review build, not deployed. AT A GLANCE is the app's opening tab, and LOG remains available for workout entry. The overview uses saved date-specific planner and tracker data, shows the full selected class name, and includes the Achilles PT weekday guide and recovery note. Quotes are stable per date; overview display does not alter completion history.
 
-The Achilles Rehab link is highlighted in teal near the top of the tracker, and the rehab page is included in the offline cache. Tracker and rehab saved-data keys and storage logic are unchanged. This ZIP does not deploy itself.
+Publishing this update would replace the live app files and requires the user's explicit approval. No live site changes have been made.

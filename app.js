@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v44";
+const APP_VERSION = "v46";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -350,6 +350,23 @@ let state = {
   runCalIdx: null, // which calendar week the Run tab is showing (null = current)
 };
 
+// The standalone file preview uses the live site's verified Monday snapshot
+// when it has no local tracker data. This sample stays in memory only and is
+// never written to localStorage or used on the deployed HTTPS app.
+if (location.protocol === "file:" && Object.keys(logs).length === 0 && classes.length === 0) {
+  const previewDate = "2026-10-26";
+  state.selectedDate = previewDate;
+  logs[previewDate] = {
+    dayId: "lower",
+    entries: {},
+    plan: { primary: "lower" },
+    classSessions: {
+      previewBike: { exerciseName: "Bike (Recumbent)", classId: "preview-cycle-ep03-tyrell" }
+    }
+  };
+  classes = [{ id: "preview-cycle-ep03-tyrell", title: "Cycle", episode: "03", instructor: "Tyrell", exercise: "Recumbent Bike" }];
+}
+
 // ---------- Helpers ----------
 // Local calendar date (not UTC). toISOString() is UTC, which in Central
 // time rolled "today" over to tomorrow every evening after 7pm.
@@ -624,10 +641,10 @@ function renderOverview() {
   const grid = el(`<div class="overview-grid"><div class="overview-main"></div><aside class="overview-side"></aside></div>`);
   const main = grid.querySelector(".overview-main");
   const side = grid.querySelector(".overview-side");
-  const planCard = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Today's Plan</h2><p class="overview-muted">Your saved plan for this date</p></div><span class="overview-pill">${label ? label.toUpperCase() : "PLAN"}</span></div></section>`);
+  const planCard = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Today's Plan</h2></div></div></section>`);
   if (label) {
-    const planName = dayLog.plan?.primary ? (PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary) : label;
-    planCard.appendChild(el(`<div class="overview-slot"><span class="overview-icon">${label === "Mobility Day" ? "🧘" : label === "Rest Day" ? "🌿" : "💪"}</span><div><strong>${planName}</strong><small>Exercise details are in LOG.</small></div></div>`));
+    const icon = label === "Mobility Day" ? "🧘" : label === "Rest Day" ? "🌿" : label === "Cardio Day" ? "🏃" : label === "Core Day" ? "🧩" : "💪";
+    planCard.appendChild(el(`<div class="overview-slot"><span class="overview-icon">${icon}</span><div><strong>${label}</strong></div></div>`));
   } else {
     planCard.appendChild(el(`<div class="overview-empty">No day plan is saved for this date yet. Choose a date above or use Sunday Planner to set the week.</div>`));
   }
@@ -640,29 +657,20 @@ function renderOverview() {
     return { id, name:s.exerciseName || ex?.name || id, cls:c, saved:s };
   }).filter(s => s.cls);
   const cardioSessions = sessions.filter(s => /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${s.name} ${s.cls.exercise||""} ${s.cls.title||""}`));
-  const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2><p class="overview-muted">One combined cardio session</p></div><span class="overview-pill">${run?.workout ? "MARATHON PLAN" : "CARDIO"}</span></div></section>`);
-  if (run?.workout) {
-    cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${run.workout.title}</strong><small>${run.workout.detail || "Marathon training session"}</small></div></div>`));
-  } else if (cardioSessions.length) {
-    cardioSessions.forEach(s => cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🚴</span><div><strong>${s.name}</strong><small>${s.cls.exercise || "Cardio session"}</small></div></div>`)));
-  } else if (dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary)) {
-    cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary}</strong><small>See the selected class in the Classes tab.</small></div></div>`));
-  } else {
-    cardio.appendChild(el(`<div class="overview-empty">No cardio session is planned for this date.</div>`));
+  const hasCardioPlan = !!run?.workout || cardioSessions.length > 0 || !!(dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary));
+  if (hasCardioPlan) {
+    const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2></div></div></section>`);
+    if (run?.workout) cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${run.workout.title}</strong><small>${run.workout.detail || "Marathon training session"}</small></div></div>`));
+    else if (!cardioSessions.length && dayLog.plan?.primary) cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary}</strong></div></div>`));
+    cardioSessions.forEach(s => cardio.appendChild(el(`<div class="overview-class"><strong>${classLabel(s.cls)}</strong></div>`)));
+    main.appendChild(cardio);
   }
-  if (cardioSessions.length) {
-    cardioSessions.forEach(s => {
-      const clsName = classLabel(s.cls);
-      cardio.appendChild(el(`<div class="overview-class"><span class="overview-play">▶</span><strong>${clsName}</strong></div>`));
-    });
-  }
-  main.appendChild(cardio);
 
   const pt = overviewPT(date);
   const ptCard = el(`<section class="overview-card overview-pt"><div class="overview-card-head"><div><h2>Achilles PT</h2><p class="overview-muted">${pt.title}</p></div><span class="overview-pill gold">${pt.minutes}</span></div></section>`);
   pt.items.forEach(([name,dose,instruction]) => ptCard.appendChild(el(`<div class="overview-pt-row"><strong>${name}</strong><span>${dose}</span><p>${instruction}</p></div>`)));
   side.appendChild(ptCard);
-  side.appendChild(el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Recovery</h2><p class="overview-muted">A gentle check-in</p></div><span class="overview-pill">RECOVERY</span></div><div class="overview-recovery"><strong>Notice how your heel feels</strong><p>Pay attention during and after activity, and to next-morning stiffness. If symptoms trend upward or affect walking, reduce loading and contact your PT.</p></div></section>`));
+  side.appendChild(el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Recovery</h2></div></div><div class="overview-recovery"><strong>Heel check-in</strong><p>Pay attention during and after activity, and to next-morning stiffness. If symptoms trend upward or affect walking, reduce loading and contact your PT.</p></div></section>`));
   wrap.appendChild(grid);
   return wrap;
 }

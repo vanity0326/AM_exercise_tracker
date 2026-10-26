@@ -105,14 +105,14 @@ function editClassSession(date, exerciseId, exerciseName){
 }
 function effortOptions(selected){return `<option value="">Not recorded</option>`+Array.from({length:10},(_,i)=>`<option value="${i+1}" ${Number(selected)===i+1?'selected':''}>${i+1} — ${effortLabel(i+1)}</option>`).join('');}
 function renderDayClassSection(date){
- const box=el(`<details class="cl-day hist-card"><summary>Class Details (optional) ▾</summary><p class="field-hint">Associate classes with your exercises. You can also add them to older workouts in History.</p><div class="cl-day-items"></div></details>`);
+ const box=el(`<details class="cl-day hist-card"><summary>Assign Classes ▾</summary><p class="field-hint">Choose a saved class for an exercise or cardio finisher. You can also add classes to older workouts in History.</p><div class="cl-day-items"></div></details>`);
  const existing=logs[date]?.classSessions||{};const day=selectedDayInfo();
- const exerciseNames=new Map(); if(day&&day.loggable){for(const key of [day.id,finisherKey(day.id)])getExerciseList(date,key).forEach(x=>exerciseNames.set(x.id,x.name));}
+ const exerciseNames=new Map(), finisherIds=new Set(); if(day&&day.loggable){getExerciseList(date,day.id).forEach(x=>exerciseNames.set(x.id,x.name));getExerciseList(date,finisherKey(day.id)).forEach(x=>{exerciseNames.set(x.id,x.name);finisherIds.add(x.id)});}
  Object.entries(logs[date]?.entries||{}).forEach(([id])=>{const ex=allExercises()[id];if(ex)exerciseNames.set(id,ex.name)});
  Object.entries(existing).forEach(([id,s])=>{if(!exerciseNames.has(id))exerciseNames.set(id,s.exerciseName||id)});
  const items=box.querySelector('.cl-day-items');
- exerciseNames.forEach((name,id)=>{const cur=existing[id];const b=el(`<button class="btn-secondary cl-session-btn">${safeText(name)}: ${safeText(classFor(cur?.classId)?.title||'Add class / effort')}</button>`);b.onclick=()=>editClassSession(date,id,name);items.appendChild(b)});
- if(!exerciseNames.size)items.innerHTML='<p class="field-hint">Add an exercise first, or use History to backfill previous workouts.</p>';
+ exerciseNames.forEach((name,id)=>{const cur=existing[id];const selected=classFor(cur?.classId);const context=finisherIds.has(id)?' · Cardio Finisher':'';const label=selected?classLabel(selected):'Assign class';const b=el(`<button class="btn-secondary cl-session-btn"></button>`);b.textContent=`${name}${context}: ${label}`;b.onclick=()=>editClassSession(date,id,name);items.appendChild(b)});
+ if(!exerciseNames.size)items.innerHTML='<p class="field-hint">Add an exercise first, or use History to attach a class to an older workout.</p>';
  return box;
 }
 function attachHistoryClassButtons(card,date,dayLog,exMap){

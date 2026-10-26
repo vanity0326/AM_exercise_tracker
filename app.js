@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v47";
+const APP_VERSION = "v48";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -670,7 +670,17 @@ function renderOverview() {
     const saved = dayLog.classSessions?.[ex.id] || {};
     return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:classFor(saved.classId) };
   });
-  const hasCardioPlan = !!run?.workout || cardioExercises.length > 0 || cardioSessions.length > 0 || !!(dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary));
+  const planDayIds = { fullbody:"upper", mob:"mobility", "lu-core":"core", "lu-mob":"mobility", "lu-rest":"rest" };
+  const plannedDayId = dayLog.plan?.primary;
+  const finisherDayId = planDayIds[plannedDayId] || (DAYS.some(day => day.id === plannedDayId) ? plannedDayId : dayLog.dayId);
+  const finisherExercises = DAYS.some(day => day.id === finisherDayId)
+    ? getExerciseList(date, finisherKey(finisherDayId)).map(ex => {
+        const saved = dayLog.classSessions?.[ex.id] || {};
+        return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:classFor(saved.classId), finisher:true };
+      })
+    : [];
+  const cardioActivities = [...cardioExercises, ...finisherExercises];
+  const hasCardioPlan = !!run?.workout || cardioActivities.length > 0 || cardioSessions.length > 0 || !!(dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary));
   if (hasCardioPlan) {
     const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2></div></div></section>`);
     const appendCardioActivity = (name, cls, workout = null) => {
@@ -690,9 +700,14 @@ function renderOverview() {
       }
       cardio.appendChild(row);
     };
-    if (cardioExercises.length) {
-      cardioExercises.forEach((activity, i) => appendCardioActivity(activity.name, activity.cls, i === 0 ? run?.workout : null));
-      const listedIds = new Set(cardioExercises.map(activity => activity.id));
+    if (cardioActivities.length) {
+      const seenActivityIds = new Set();
+      cardioActivities.forEach((activity, i) => {
+        if (seenActivityIds.has(activity.id)) return;
+        seenActivityIds.add(activity.id);
+        appendCardioActivity(activity.name, activity.cls, i === 0 ? run?.workout : null);
+      });
+      const listedIds = new Set(cardioActivities.map(activity => activity.id));
       cardioSessions.filter(session => !listedIds.has(session.id)).forEach(session => appendCardioActivity(session.name, session.cls));
     } else if (cardioSessions.length) {
       cardioSessions.forEach((session, i) => appendCardioActivity(session.name, session.cls, i === 0 ? run?.workout : null));

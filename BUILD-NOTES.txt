@@ -1,5 +1,5 @@
-Toni's Total Training Tracker v46 - local preview build
+Toni's Total Training Tracker v47 - local preview build
 
-The landing screen opens to AT A GLANCE. LOG remains available for exercise entry. The overview reads each date's saved Sunday Planner selection, tracker class associations, marathon plan, and Achilles weekday guide. It includes a stable quote per date and print styling. On a standalone file preview with no tracker data, a verified Oct 26 Monday sample appears in memory only; it is not saved to history and does not run on the HTTPS site.
+The landing screen opens to AT A GLANCE. LOG remains available for exercise entry. The overview reads each date's saved Sunday Planner selection, date-specific cardio activity and attached class, marathon plan, and Achilles weekday guide. Cardio activity and its selected class appear together; marathon details are shown with the activity. No redundant combined-session explanation is displayed. The overview includes a stable quote per date and print styling. On a standalone file preview with no tracker data, a verified Oct 26 Monday sample appears in memory only; it is not saved to history and does not run on the HTTPS site.
 
 This package is a local review build. The live Netlify site has not been changed or deployed. Existing tracker storage keys are preserved.

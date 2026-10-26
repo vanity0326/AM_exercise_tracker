@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v46";
+const APP_VERSION = "v47";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -618,6 +618,15 @@ function overviewDayLabel(date) {
   const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",rest:"Rest Day",cardio:"Cardio Day"};
   return names[id] || (day.plan?.primary ? PLAN_LABELS[day.plan.primary] || day.plan.primary : null);
 }
+function overviewCardioIcon(name) {
+  const value = String(name || "").toLowerCase();
+  if (/swim/.test(value)) return "🏊";
+  if (/bike|cycle/.test(value)) return "🚴";
+  if (/ellip/.test(value)) return "⟳";
+  if (/run|walk|treadmill/.test(value)) return "🏃";
+  if (/pilates|yoga/.test(value)) return "🧘";
+  return "♥";
+}
 function overviewPT(date) {
   const dt = new Date(date + "T12:00:00");
   const weekday = (dt.getDay() + 6) % 7;
@@ -657,12 +666,41 @@ function renderOverview() {
     return { id, name:s.exerciseName || ex?.name || id, cls:c, saved:s };
   }).filter(s => s.cls);
   const cardioSessions = sessions.filter(s => /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${s.name} ${s.cls.exercise||""} ${s.cls.title||""}`));
-  const hasCardioPlan = !!run?.workout || cardioSessions.length > 0 || !!(dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary));
+  const cardioExercises = getExerciseList(date, "cardio").map(ex => {
+    const saved = dayLog.classSessions?.[ex.id] || {};
+    return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:classFor(saved.classId) };
+  });
+  const hasCardioPlan = !!run?.workout || cardioExercises.length > 0 || cardioSessions.length > 0 || !!(dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary));
   if (hasCardioPlan) {
     const cardio = el(`<section class="overview-card"><div class="overview-card-head"><div><h2>Cardio</h2></div></div></section>`);
-    if (run?.workout) cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${run.workout.title}</strong><small>${run.workout.detail || "Marathon training session"}</small></div></div>`));
-    else if (!cardioSessions.length && dayLog.plan?.primary) cardio.appendChild(el(`<div class="overview-slot"><span class="overview-icon">🏃</span><div><strong>${PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary}</strong></div></div>`));
-    cardioSessions.forEach(s => cardio.appendChild(el(`<div class="overview-class"><strong>${classLabel(s.cls)}</strong></div>`)));
+    const appendCardioActivity = (name, cls, workout = null) => {
+      const row = el(`<div class="overview-slot"><span class="overview-icon"></span><div><strong></strong></div></div>`);
+      row.querySelector(".overview-icon").textContent = overviewCardioIcon(name);
+      row.querySelector("strong").textContent = name;
+      const content = row.querySelector("div");
+      if (cls) {
+        const classLine = document.createElement("small");
+        classLine.textContent = classLabel(cls);
+        content.appendChild(classLine);
+      }
+      if (workout) {
+        const planLine = document.createElement("small");
+        planLine.textContent = `Marathon plan · ${workout.title}${workout.detail ? ` · ${workout.detail}` : ""}`;
+        content.appendChild(planLine);
+      }
+      cardio.appendChild(row);
+    };
+    if (cardioExercises.length) {
+      cardioExercises.forEach((activity, i) => appendCardioActivity(activity.name, activity.cls, i === 0 ? run?.workout : null));
+      const listedIds = new Set(cardioExercises.map(activity => activity.id));
+      cardioSessions.filter(session => !listedIds.has(session.id)).forEach(session => appendCardioActivity(session.name, session.cls));
+    } else if (cardioSessions.length) {
+      cardioSessions.forEach((session, i) => appendCardioActivity(session.name, session.cls, i === 0 ? run?.workout : null));
+    } else if (run?.workout) {
+      appendCardioActivity("Marathon plan", null, run.workout);
+    } else if (dayLog.plan?.primary) {
+      appendCardioActivity(PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary, null);
+    }
     main.appendChild(cardio);
   }
 

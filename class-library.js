@@ -4,6 +4,18 @@ let classes = (() => { try { return JSON.parse(localStorage.getItem(LS_CLASSES) 
 function saveClasses() { localStorage.setItem(LS_CLASSES, JSON.stringify(classes)); touchLocalUpdatedAt(); schedulePush(); }
 function safeText(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function classFor(id) { return classes.find(c => c.id === id); }
+const MARATHON_RUN_CLASS_ID = "marathon_walk_run";
+function marathonAudioClassSessionFor(date) {
+ const explicit=logs[date]?.classSessions?.[MARATHON_RUN_CLASS_ID];
+ if(explicit)return {session:explicit,sourceId:MARATHON_RUN_CLASS_ID};
+ if(!planSlotFor(date)?.workout)return null;
+ const match=Object.entries(logs[date]?.classSessions||{}).find(([id,s])=>{
+  if(!s?.classId||id===MARATHON_RUN_CLASS_ID)return false;
+  const c=classFor(s.classId);
+  return !!c&&/walk\s*\/\s*run|walk\s+run|run\s*\/\s*walk/i.test(`${c.title||""} ${c.exercise||""}`);
+ });
+ return match?{session:match[1],sourceId:match[0],inherited:true}:null;
+}
 function effortLabel(v) { const n=Number(v); return !n?'Not rated':n<=3?'Easy':n<=6?'Moderate':n<=8?'Hard':'All Out'; }
 function classLabel(c){return `${c.title||c.exercise||'Class'}${c.episode?' — Ep '+c.episode:''}${c.instructor?' · '+c.instructor:''}`;}
 function classMeta(c){return [c.duration?c.duration+' min':'',c.published||'',c.music||'',c.platform||''].filter(Boolean).join(' · ');}
@@ -12,7 +24,7 @@ function classPickerMarkup(selected='',exercise='') {
  return `<div class="cl-picker" data-exercise="${safeText(exercise)}"><input type="hidden" name="classId" value="${safeText(selected)}"><input class="cl-picker-search" type="search" autocomplete="off" placeholder="Search episode, instructor, title, date, music…" aria-label="Find saved class" value="${safeText(c?classLabel(c):'')}"><label class="cl-picker-filter"><input type="checkbox" class="cl-only-exercise" ${exercise?'checked':''}> Match this exercise</label><div class="cl-picker-results" role="listbox"></div></div>`;
 }
 function normalizeClassExercise(x){return String(x||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');}
-function exerciseMatches(c,exercise){const x=normalizeClassExercise(exercise), y=normalizeClassExercise(c.exercise);if(!x)return true;if(x===y)return true;return (x.includes('recumbent')&&(/cycle|bike|cycling/.test(y)||/cycle|cycling/.test(normalizeClassExercise(c.title))))||(x.includes('treadmill')&&(/walk|run|treadmill/.test(y)||/walk|run/.test(normalizeClassExercise(c.title))));}
+function exerciseMatches(c,exercise){const x=normalizeClassExercise(exercise), y=normalizeClassExercise(c.exercise), title=normalizeClassExercise(c.title);if(!x)return true;if(x===y)return true;if(x.includes('marathon')&&/walk|run/.test(x)&&/walk|run/.test(`${y} ${title}`))return true;return (x.includes('recumbent')&&(/cycle|bike|cycling/.test(y)||/cycle|cycling/.test(title)))||(x.includes('treadmill')&&(/walk|run|treadmill/.test(y)||/walk|run/.test(title)));}
 function wireClassPicker(overlay){
  const picker=overlay.querySelector('.cl-picker');if(!picker)return;
  const field=picker.querySelector('input[name=classId]'),search=picker.querySelector('.cl-picker-search'),list=picker.querySelector('.cl-picker-results'),filter=picker.querySelector('.cl-only-exercise');
@@ -96,8 +108,8 @@ function openClassEditor(id,onSaved,duplicateOf=null){
  overlay.querySelector('.cl-delete')?.addEventListener('click',()=>{if(!confirm('Delete this class from the library? Linked workout sessions will keep their measurements but lose this class reference.'))return;classes=classes.filter(c=>c.id!==id);Object.values(logs).forEach(d=>Object.values(d.classSessions||{}).forEach(s=>{if(s.classId===id)s.classId=''}));saveLogs(logs);saveClasses();close();render()});
  form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form).entries());data.title=(data.title||'').trim()||data.exercise?.trim()||'';if(!data.title){alert('Enter a class name or workout type.');return}data.favorite=form.elements.favorite.checked;data.id=original?.id||('class_'+Date.now()+'_'+Math.random().toString(36).slice(2,7));if(original)Object.assign(original,data);else classes.push(data);saveClasses();close();render();onSaved?.(data.id);if(e.submitter?.value==='another')openClassEditor(null,onSaved,{...data,episode:''});};document.body.appendChild(overlay);
 }
-function editClassSession(date, exerciseId, exerciseName){
-  const current=logs[date]?.classSessions?.[exerciseId]||{};
+function editClassSession(date, exerciseId, exerciseName, currentOverride){
+ const current=logs[date]?.classSessions?.[exerciseId]||currentOverride||{};
   const overlay=el(`<div class="modal-overlay"><div class="modal cl-modal"><h3>Class for ${safeText(exerciseName)}</h3><p class="field-hint">${safeText(date)} · Historical workout measurements remain unchanged.</p><form id="cl-session"><label class="form-row">Saved class</label>${classPickerMarkup(current.classId,exerciseName)}<button class="btn-secondary" type="button" id="cl-new">+ Create New Class</button><details><summary>Effort & session details</summary><div class="cl-fields"><label class="form-row">Target effort<select name="target">${effortOptions(current.target)}</select></label><label class="form-row">Actual effort<select name="actual">${effortOptions(current.actual)}</select></label><label class="form-row">Modifications<textarea name="modifications">${safeText(current.modifications||'')}</textarea></label><label class="form-row">Notes<textarea name="notes">${safeText(current.notes||'')}</textarea></label><label class="form-row">Would repeat?<select name="repeat">${['','Yes','Maybe','No'].map(v=>`<option ${current.repeat===v?'selected':''}>${v}</option>`).join('')}</select></label></div></details><div class="modal-actions"><button type="button" class="btn-secondary cl-cancel">Cancel</button><button class="btn-primary" type="submit">Save</button></div></form></div></div>`);
   const close=()=>overlay.remove();overlay.onclick=e=>{if(e.target===overlay)close()};overlay.querySelector('.cl-cancel').onclick=close;
   overlay.querySelector('#cl-new').onclick=()=>openClassEditor(null,id=>{if(document.body.contains(overlay)){overlay.querySelector('.cl-picker')?.selectClass(id)}});
@@ -109,7 +121,7 @@ function renderDayClassSection(date){
  const existing=logs[date]?.classSessions||{};const day=selectedDayInfo();
  const exerciseNames=new Map(), finisherIds=new Set(); if(day&&day.loggable){getExerciseList(date,day.id).forEach(x=>exerciseNames.set(x.id,x.name));getExerciseList(date,finisherKey(day.id)).forEach(x=>{exerciseNames.set(x.id,x.name);finisherIds.add(x.id)});}
  Object.entries(logs[date]?.entries||{}).forEach(([id])=>{const ex=allExercises()[id];if(ex)exerciseNames.set(id,ex.name)});
- Object.entries(existing).forEach(([id,s])=>{if(!exerciseNames.has(id))exerciseNames.set(id,s.exerciseName||id)});
+ Object.entries(existing).forEach(([id,s])=>{if(id!==MARATHON_RUN_CLASS_ID&&!exerciseNames.has(id))exerciseNames.set(id,s.exerciseName||id)});
  const items=box.querySelector('.cl-day-items');
  exerciseNames.forEach((name,id)=>{const cur=existing[id];const selected=classFor(cur?.classId);const context=finisherIds.has(id)?' · Cardio Finisher':'';const label=selected?classLabel(selected):'Assign class';const b=el(`<button class="btn-secondary cl-session-btn"></button>`);b.textContent=`${name}${context}: ${label}`;b.onclick=()=>editClassSession(date,id,name);items.appendChild(b)});
  if(!exerciseNames.size)items.innerHTML='<p class="field-hint">Add an exercise first, or use History to attach a class to an older workout.</p>';

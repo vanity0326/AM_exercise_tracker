@@ -1,5 +1,5 @@
-Toni's Total Training Tracker v48 - local preview build
+Toni's Total Training Tracker v49 - local preview build
 
-The landing screen opens to AT A GLANCE. LOG remains available for exercise entry. The overview reads each date's saved Sunday Planner selection, cardio activities and cardio finishers with their attached classes, marathon plan, and Achilles weekday guide. Cardio activity and its selected class appear together; marathon details are shown with the activity. Class assignment is labeled clearly in LOG, including the cardio finisher entries. The overview includes a stable quote per date and print styling. On a standalone file preview with no tracker data, a verified Oct 26 Monday sample appears in memory only; it is not saved to history and does not run on the HTTPS site.
+Each scheduled marathon walk/run session can have its own audio class selected from the saved Class Library. The selector appears on that date's marathon card in LOG. At a Glance presents Marathon walk/run as a distinct row and shows its audio class beneath it, separate from other cardio activities. A matching Walk/Run class already associated with that date's walk is recognized for the marathon row. Elliptical and other shared cardio-library entries no longer appear on non-cardio day types.
 
-This package is a local review build. The live Netlify site has not been changed or deployed. Existing tracker storage keys are preserved.
+This is a local review build only. The live Netlify site has not been changed or deployed. Existing storage keys and saved exercise measurements are preserved.

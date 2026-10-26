@@ -687,6 +687,7 @@ select {
 .run-card.optional { border-left-color: var(--border); }
 .run-card-meta { font-size: 12px; font-weight: 600; color: var(--text-faint); margin-bottom: 6px; }
 .run-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.run-class-btn { width: 100%; min-height: 48px; margin: 10px 0 4px; text-align: left; white-space: normal; font-size: 16px; }
 .run-title { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; line-height: 1.2; }
 .run-detail { font-size: 13px; color: var(--text-dim); margin-top: 3px; line-height: 1.4; }
 

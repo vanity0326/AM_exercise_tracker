@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v48";
+const APP_VERSION = "v49";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -665,10 +665,13 @@ function renderOverview() {
     const c = classFor(s.classId);
     return { id, name:s.exerciseName || ex?.name || id, cls:c, saved:s };
   }).filter(s => s.cls);
-  const cardioSessions = sessions.filter(s => /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${s.name} ${s.cls.exercise||""} ${s.cls.title||""}`));
-  const cardioExercises = getExerciseList(date, "cardio").map(ex => {
+  const marathonAudioSession = marathonAudioClassSessionFor(date);
+  const cardioSessions = sessions.filter(s => s.id !== marathonAudioSession?.sourceId && s.id !== MARATHON_RUN_CLASS_ID && s.cls.id !== marathonAudioSession?.session?.classId && /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${s.name} ${s.cls.exercise||""} ${s.cls.title||""}`));
+  const cardioExercises = (dayLog.dayId === "cardio" ? getExerciseList(date, "cardio") : []).map(ex => {
     const saved = dayLog.classSessions?.[ex.id] || {};
-    return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:classFor(saved.classId) };
+    const savedClass = classFor(saved.classId);
+    const belongsToMarathon = savedClass && marathonAudioSession?.session?.classId === saved.classId;
+    return { id:ex.id, name:saved.exerciseName || ex.name || ex.id, cls:belongsToMarathon ? null : savedClass };
   });
   const planDayIds = { fullbody:"upper", mob:"mobility", "lu-core":"core", "lu-mob":"mobility", "lu-rest":"rest" };
   const plannedDayId = dayLog.plan?.primary;
@@ -700,20 +703,27 @@ function renderOverview() {
       }
       cardio.appendChild(row);
     };
+    let hasListedActivity = false;
     if (cardioActivities.length) {
       const seenActivityIds = new Set();
       cardioActivities.forEach((activity, i) => {
         if (seenActivityIds.has(activity.id)) return;
         seenActivityIds.add(activity.id);
-        appendCardioActivity(activity.name, activity.cls, i === 0 ? run?.workout : null);
+        appendCardioActivity(activity.name, activity.cls);
+        hasListedActivity = true;
       });
       const listedIds = new Set(cardioActivities.map(activity => activity.id));
-      cardioSessions.filter(session => !listedIds.has(session.id)).forEach(session => appendCardioActivity(session.name, session.cls));
+      const extraSessions = cardioSessions.filter(session => !listedIds.has(session.id));
+      extraSessions.forEach(session => appendCardioActivity(session.name, session.cls));
+      hasListedActivity = hasListedActivity || extraSessions.length > 0;
     } else if (cardioSessions.length) {
-      cardioSessions.forEach((session, i) => appendCardioActivity(session.name, session.cls, i === 0 ? run?.workout : null));
-    } else if (run?.workout) {
-      appendCardioActivity("Marathon plan", null, run.workout);
-    } else if (dayLog.plan?.primary) {
+      cardioSessions.forEach(session => appendCardioActivity(session.name, session.cls));
+      hasListedActivity = true;
+    }
+    if (run?.workout) {
+      appendCardioActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), run.workout);
+      hasListedActivity = true;
+    } else if (!hasListedActivity && dayLog.plan?.primary) {
       appendCardioActivity(PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary, null);
     }
     main.appendChild(cardio);

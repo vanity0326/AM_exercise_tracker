@@ -404,6 +404,14 @@ function renderRunStrip(iso) {
   const refresh = () => render();
   top.appendChild(renderDoneButton(iso, refresh));
 
+  const savedAudioClass = marathonAudioClassSessionFor(iso);
+  const selectedAudioClass = classFor(savedAudioClass?.session?.classId);
+  const audioClassButton = el(`<button type="button" class="btn-secondary run-class-btn"></button>`);
+  audioClassButton.textContent = selectedAudioClass ? `Audio class: ${classLabel(selectedAudioClass)}` : "+ Assign audio class";
+  audioClassButton.setAttribute("aria-label", `${selectedAudioClass ? "Change" : "Assign"} audio class for Marathon walk/run`);
+  audioClassButton.onclick = () => editClassSession(iso, MARATHON_RUN_CLASS_ID, "Marathon walk/run", savedAudioClass?.session);
+  card.appendChild(audioClassButton);
+
   const r = runRecord(iso);
   const details = el(`<details class="run-details" ${runHasData(r) && (r.miles != null || r.secs != null || r.note || r.feel) ? "open" : ""}><summary>${runHasData(r) && runSummaryText(r) !== "done" ? escapeHtml(runSummaryText(r)) : "Add distance, time, and notes"}</summary></details>`);
   details.appendChild(renderRunLogForm(iso, () => {

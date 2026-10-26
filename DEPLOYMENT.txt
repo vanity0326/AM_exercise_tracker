@@ -1,5 +1,5 @@
-Toni's Total Training Tracker v48
+Toni's Total Training Tracker v49
 
-This is a local review build, not deployed. AT A GLANCE is the app's opening tab, and LOG remains available for workout entry. The overview shows cardio finisher names with their associated saved class. Class assignment is available for finishers under Assign Classes on the LOG tab. Quotes are stable per date; overview display does not alter completion history.
+Local preview only; not deployed. LOG offers a date-specific audio-class assignment for every scheduled marathon walk/run session, using the saved Class Library. At a Glance displays Marathon walk/run and its audio class separately from other cardio activities. Existing saved walk/run class assignments are recognized for that date.
 
 Publishing this update would replace the live app files and requires the user's explicit approval. No live site changes have been made.

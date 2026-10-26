@@ -44,7 +44,7 @@ function wireClassPicker(overlay){
 function sessionItems() {
   return Object.entries(logs).flatMap(([date,day])=>Object.entries(day.classSessions||{}).filter(([,s])=>s.classId).map(([exerciseId,s])=>({date,exerciseId,...s})));
 }
-function classStats(id) { const all=sessionItems().filter(s=>s.classId===id).sort((a,b)=>a.date.localeCompare(b.date)); return {count:all.length,last:all.at(-1)?.date || '',sessions:all}; }
+function classStats(id) { const all=sessionItems().filter(s=>s.classId===id&&classSessionHasCompletion(s.exerciseId,s,logs[s.date],s.date)).sort((a,b)=>a.date.localeCompare(b.date)); return {count:all.length,last:all.at(-1)?.date || '',sessions:all}; }
 function renderClasses() {
   const wrap=el(`<section class="cl-wrap"><h2>Class Library</h2><p class="field-hint">Save classes without logging a workout. Use History to attach classes to previous sessions.</p><div class="cl-toolbar"><input id="cl-search" placeholder="Search classes, instructors, music or platforms" aria-label="Search classes"><button class="btn-primary" id="cl-add">+ Add Class</button><button class="btn-secondary" id="cl-export">Export JSON</button><button class="btn-secondary" id="cl-import">Import JSON</button><input type="file" id="cl-file" accept="application/json,.json" hidden></div><div class="cl-filter"><select id="cl-status"><option value="">All statuses</option><option>Want to Try</option><option>Active</option><option>Favorite</option><option>Archived</option></select><select id="cl-platform"><option value="">All platforms</option></select></div><div id="cl-results"></div></section>`);
   wrap.querySelector('#cl-add').onclick=()=>openClassEditor();

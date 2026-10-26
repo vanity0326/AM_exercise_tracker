@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v51";
+const APP_VERSION = "v52";
 // Day "type" is now something you assign per date (like the Sunday Planner),
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -405,10 +405,21 @@ function fmtDate(iso) {
 function entryHasData(entry) {
   return !!entry && Array.isArray(entry.sets) && entry.sets.some((s) => s.reps != null);
 }
-function dayLogHasRealData(dayLog) {
+// A saved class selection is a plan. It becomes history only when a workout
+// entry was logged, the user explicitly added a past class, or completion data
+// was recorded for that class session.
+function classSessionHasCompletion(exerciseId, session, dayLog, date) {
+  if (!session) return false;
+  return session.completed === true || String(exerciseId).startsWith("past_") ||
+    (session.actual != null && String(session.actual).trim() !== "") ||
+    entryHasData(dayLog?.entries?.[exerciseId]) ||
+    (exerciseId === MARATHON_RUN_CLASS_ID && !!date && runHasData(runRecord(date)));
+}
+function dayLogHasRealData(dayLog, date) {
   if (!dayLog) return false;
   const hasEntry = Object.values(dayLog.entries || {}).some((e) => entryHasData(e));
-  return hasEntry || !!dayLog.note || !!dayLog.finisherNote || Object.values(dayLog.classSessions || {}).some(s => s.classId || s.actual || s.notes);
+  const hasCompletedClass = Object.entries(dayLog.classSessions || {}).some(([id, session]) => classSessionHasCompletion(id, session, dayLog, date));
+  return hasEntry || !!dayLog.note || !!dayLog.finisherNote || hasCompletedClass;
 }
 
 function allExercises() {
@@ -891,7 +902,7 @@ function setDayType(dayId) {
   // switching it needs an explicit confirmation — a stray pill tap (e.g.
   // just glancing at another day-type's list) shouldn't silently relabel
   // an already-completed session.
-  if (existing && existing.dayId && existing.dayId !== dayId && dayLogHasRealData(existing)) {
+  if (existing && existing.dayId && existing.dayId !== dayId && dayLogHasRealData(existing, state.selectedDate)) {
     const existingLabel = DAYS.find((d) => d.id === existing.dayId)?.label || existing.dayId;
     const newLabel = DAYS.find((d) => d.id === dayId)?.label || dayId;
     const ok = confirm(`${fmtDate(date)} already has logged ${existingLabel} data.\n\nSwitch this date's type to ${newLabel} instead? The logged exercises stay visible in History either way — this only changes which type this date is tagged as.`);
@@ -918,7 +929,7 @@ function renderToday() {
   const current = selectedDayInfo();
   DAYS.forEach((d) => {
     const isActive = current && current.id === d.id;
-    const hasLogged = logs[state.selectedDate]?.dayId === d.id && dayLogHasRealData(logs[state.selectedDate]);
+    const hasLogged = logs[state.selectedDate]?.dayId === d.id && dayLogHasRealData(logs[state.selectedDate], state.selectedDate);
     const pill = el(`
       <button class="day-pill ${isActive ? "active" : ""} ${hasLogged ? "done" : ""}" title="${d.label}">
         <span>${d.short}</span>
@@ -1003,7 +1014,7 @@ function renderToday() {
     actionRow.appendChild(groupBtn);
   }
 
-  const hasLoggedToday = dayLogHasRealData(todayLog);
+  const hasLoggedToday = dayLogHasRealData(todayLog, todayISO());
   if (hasLoggedToday) {
     const clearDayBtn = el(`<button class="clear-day-btn">🗑 Clear This Day's Log</button>`);
     clearDayBtn.onclick = () => clearSingleDay(state.selectedDate);
@@ -1347,7 +1358,7 @@ function refreshActiveDayPillDone() {
   const pill = document.querySelector(".day-pill.active");
   if (!pill) return;
   const date = state.selectedDate;
-  pill.classList.toggle("done", dayLogHasRealData(logs[date]));
+  pill.classList.toggle("done", dayLogHasRealData(logs[date], date));
 }
 
 function cssEscape(s) {
@@ -1358,7 +1369,7 @@ function cssEscape(s) {
 // and bank are never touched by this.
 function clearSingleDay(date) {
   const dayLog = logs[date];
-  if (!dayLogHasRealData(dayLog)) {
+  if (!dayLogHasRealData(dayLog, date)) {
     alert("Nothing logged on this day yet.");
     return;
   }
@@ -1495,9 +1506,10 @@ function applyProgression(exId) {
 // ---- History tab ----
 function renderHistory() {
   const wrap = document.createElement("div");
+  const today = todayISO();
   const dates = [...new Set([
-    ...Object.keys(logs).filter((d) => dayLogHasRealData(logs[d])),
-    ...runDatesWithData(),
+    ...Object.keys(logs).filter((d) => d <= today && dayLogHasRealData(logs[d], d)),
+    ...runDatesWithData().filter((d) => d <= today),
   ])].sort().reverse();
 
   const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
@@ -1520,7 +1532,7 @@ function renderHistory() {
 
   const exMap = allExercises();
   dates.forEach((date) => {
-    const dayLog = dayLogHasRealData(logs[date]) ? logs[date] : { entries: {} };
+    const dayLog = logs[date] || { entries: {} };
     const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
     const runLine = runHistoryLine(date);
     const dayLabels = [dayInfo ? dayInfo.label : "", runLine ? "Run" : ""].filter(Boolean).join(" + ");
@@ -1551,7 +1563,7 @@ function renderHistory() {
     // A class existing in the library alone never counts as completed.
     const completedClassSessions = dayLog.classSessions || {};
     Object.entries(completedClassSessions).forEach(([exerciseId, session]) => {
-      if (!session?.classId) return;
+      if (!session?.classId || !classSessionHasCompletion(exerciseId, session, dayLog, date)) return;
       const completedClass = classFor(session.classId);
       if (!completedClass) return;
       const exercise = exMap[exerciseId];

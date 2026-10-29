@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v54 draft";
+const APP_VERSION = "v54.1 draft";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional

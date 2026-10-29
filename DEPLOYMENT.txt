@@ -1,9 +1,4 @@
-Toni's Total Training Tracker v52
+Toni's Total Training Tracker v53 draft
 
-Local build for review. Not deployed.
-
-The home screen opens to the single-day At a Glance. A Day/Week switch keeps the Monday-through-Sunday view available; the weekly view reads the planner's saved day plans, cardio activities and assigned classes, marathon walk/run prescriptions and audio classes, and the alternating Achilles PT schedule. The weekly view can navigate between weeks and opens the browser print dialog in landscape layout.
-
-Publishing replaces the live app files and is not authorized by this package. Deploy only after the user explicitly approves. Existing storage keys are retained; no data migration is required.
-
-For Netlify manual upload, place the contents of this folder at the publish root so index.html is at the root.
+Local draft package. No live site or remote data was changed or deployed.
+The existing Netlify configuration and data API remain in the package.

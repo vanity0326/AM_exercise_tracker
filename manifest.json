@@ -1,7 +1,7 @@
 {
   "name": "Toni's Total Training Tracker",
   "short_name": "Toni's Tracker",
-  "description": "Personal workout tracker with weekly At a Glance, cross-device sync, and Sunday Planner integration",
+  "description": "Personal workout tracker with in-app weekly planning and cross-device sync",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

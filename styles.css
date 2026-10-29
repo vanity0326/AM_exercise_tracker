@@ -1065,3 +1065,49 @@ select {
   .week-overview-activity{padding:1px 0 2px}.week-overview-activity>strong{font-size:18px}.week-overview-class{font-size:16px;padding:3px 7px;margin-top:3px}.week-overview-detail{font-size:16px;margin-top:1px}
   .week-overview-empty{font-size:16px}.week-overview-pt-title{font-size:13px;margin-bottom:3px}.week-overview-pt-item{font-size:16px;line-height:1.18}.week-overview-pt-item+ .week-overview-pt-item{margin-top:1px}
 }
+
+/* v53: integrated weekly planning in Log */
+.log-week-plan{margin:0 0 20px;padding:18px;background:#fffefa;border:1.5px solid #c8d8cd;border-radius:15px;box-shadow:0 4px 18px #234b3508}
+.log-week-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:13px}
+.log-week-kicker{font-size:12px;font-weight:800;letter-spacing:.14em;color:#26704e}
+.log-week-head h2{font-size:21px;margin:3px 0 4px}.log-week-head p{margin:0;color:var(--text-dim);font-size:13px;line-height:1.45;max-width:650px}
+.log-week-open{width:auto;margin:0;padding:7px 10px;border:1px solid #aec2b4;border-radius:8px;background:#fff;color:#24543d;font-weight:700;cursor:pointer}
+.log-week-days{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:8px;overflow-x:auto;padding:2px 1px 9px}
+.log-week-day{min-width:130px;padding:10px;background:#f7faf7;border:1px solid #d9e4db;border-radius:10px}
+.log-week-dayhead{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}.log-week-dayhead strong{font-size:14px;color:#244a37}.log-week-open{align-self:flex-start;padding:4px 7px;font-size:11px}
+.log-week-day label{display:block;margin-top:8px;font-size:11px;font-weight:800;color:#5f6e66}.log-week-day select{display:block;width:100%;min-height:38px;margin-top:3px;padding:6px;border:1px solid #cbd7ce;border-radius:7px;background:#fff;color:#23352b;font-size:12px}
+.log-week-balance{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:11px;border-top:1px solid #d9e4db}.log-week-balance>strong{font-size:13px;color:#254c3a}.log-week-counts{display:flex;gap:7px;flex-wrap:wrap}.log-week-count{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:99px;background:#eaf2eb;font-size:12px}.log-week-count strong{color:#1d6946;font-size:14px}
+@media(max-width:720px){.log-week-plan{padding:13px}.log-week-head{flex-direction:column}.log-week-controls{align-self:stretch;justify-content:space-between}.log-week-days{grid-template-columns:repeat(7,minmax(150px,1fr))}}
+/* v53.2 date-driven responsive layout: use desktop width and wrap controls on phones. */
+.tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));overflow:visible}
+.tab-btn{min-width:0;white-space:normal;min-height:44px}
+.day-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:visible}
+.day-pill{min-width:0;flex-shrink:1;padding-left:6px;padding-right:6px}
+.log-week-days{grid-template-columns:repeat(7,minmax(0,1fr));overflow:visible}
+.log-week-day{min-width:0}
+@media(min-width:900px){
+  #app:not(.app-overview-mode){max-width:1440px;padding:28px 32px 56px}
+  .quick-links{max-width:1440px;padding-left:32px;padding-right:32px}
+}
+@media(min-width:721px) and (max-width:899px){
+  #app:not(.app-overview-mode){max-width:900px;padding:22px 20px 48px}
+  .log-week-days{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(max-width:720px){
+  #app:not(.app-overview-mode){width:100%;max-width:none;padding:16px 12px 40px}
+  .tabs{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px}
+  .tab-btn{font-size:11px;padding:9px 3px;letter-spacing:0}
+  .day-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .day-pill{font-size:12px;padding:9px 3px}
+  .log-week-days{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+}
+@media(max-width:370px){
+  .log-week-days{grid-template-columns:minmax(0,1fr)}
+}
+/* Date is selected once and drives both the day log and weekly balance. */
+.log-activity-date{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:12px 14px;border:1.5px solid var(--border);border-radius:12px;background:var(--bg-card)}
+.log-activity-date>div{display:flex;flex-direction:column;gap:3px;min-width:0}.log-activity-date strong{font-size:14px}.log-activity-date span{font-size:12px;color:var(--text-dim)}
+.log-activity-date .log-activity-date-btn{flex:none;background:var(--primary);color:#fff;border:0;border-radius:9px;padding:10px 14px;font-size:15px;font-weight:750}
+.log-week-balance{display:block}.log-week-balance-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}.log-week-balance-head>span{font-size:11px;color:var(--text-dim)}
+.log-week-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.log-week-count{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;padding:8px 10px;border:1px solid #d8e3d9;border-radius:10px;background:#f4f8f4}.log-week-count>span{font-size:12px;font-weight:700}.log-week-count>strong{font-size:15px}.log-week-count>small{grid-column:1/-1;font-size:10px;font-weight:700}.log-week-count.met{border-color:#a9d0b1;background:#edf7ee}.log-week-count.met>small{color:#28723b}.log-week-count.needed{border-color:#e5cc87;background:#fff8e4}.log-week-count.needed>small{color:#8a6314}.log-week-count.over{border-color:#e5afa8;background:#fff0ed}.log-week-count.over>small{color:#9a392e}
+@media(max-width:720px){.log-activity-date{padding:10px;gap:8px}.log-activity-date span{font-size:11px}.log-week-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.log-week-count:last-child{grid-column:1/-1}}

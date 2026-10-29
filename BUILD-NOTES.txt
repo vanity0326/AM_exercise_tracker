@@ -1,9 +1,11 @@
-Toni's Total Training Tracker v52 - History completion and future-date correction
+Toni's Total Training Tracker v53 draft - integrated weekly planning
 
-History now includes only dates through today with logged workout or run data, notes, completed class data, or classes explicitly added as past sessions. Assigning a class to a planned workout no longer marks it completed. The Class Library's Completed count and session history use the same completion rule.
+Weekly Primary and Level Up selections now live in the Log tab and save into the existing iron-log-logs per-date records. At a Glance remains read-only and displays the saved Primary and Level Up plan.
+Pilates Reformer is a dedicated selectable/loggable day type. Planning it once contributes one Core and one Mobility component to the weekly balance, without creating two activity entries. Standalone Core and Mobility remain selectable.
+The separate Sunday Planner navigation and page are excluded from this draft package. Existing saved logs, plan records, library, bank, classes, marathon settings, sync endpoints, and storage keys are retained.
 
-The app opens on the single-day At a Glance. The Day/Week switch keeps the approved Monday-through-Sunday overview available, with week navigation, Choose week, and Print. The day view retains its date-specific motivational quote, today's plan, cardio activities and class names, Achilles PT, and recovery. The week view shows each selected plan category, cardio activities and assigned class names, the marathon walk/run prescription and its separate class, and the alternating Achilles PT routine with dosage. The weekly print omits quotes, recovery, category totals, completion tracking, and column headings as requested.
-
-The overview reads existing planner, activity, class-library, and marathon data without changing workout history or storage keys. At a Glance remains read-only. Existing app features and saved data are preserved. A local-only sample week is provided when opening the files directly with no local tracker data; it is never written to storage and is not used by the deployed HTTPS app.
-
-This is a local review build only. The live Netlify site has not been changed or deployed.
+This ZIP is a local draft. It has not been deployed.
+Assumption: no Pilates Reformer exercise routine was supplied, so the new day type starts with an empty date-specific list. Add Reformer movements with the existing Add Exercise control. Weekly totals are planned component counts, not completion counts.
+Responsive layout update: desktop now uses a wide workspace with all seven plan days visible; tablet and phone layouts wrap plan days, tabs, and day-type buttons so those controls do not require horizontal scrolling. Mobile zoom is not restricted.
+Displayed draft version and offline cache were bumped to v53.1 for this responsive update.
+v53.2: the single Activity date control now drives both the day log and the displayed Monday-to-Sunday planner week. The separate planner week navigation was removed. Planned balance cards show counts against each category target; Upper and Lower target exactly one, while Core, Mobility, and Rest require at least one. These are planned counts, not completion counts.

@@ -1,6 +1,6 @@
 // ---------- Data ----------
-const APP_VERSION = "v52";
-// Day "type" is now something you assign per date (like the Sunday Planner),
+const APP_VERSION = "v53.2 draft";
+// Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
 // finisher list. Rest is the only exception (no logging needed).
@@ -9,6 +9,7 @@ const DAYS = [
   { id: "lower", label: "Lower Body", short: "LOW", loggable: true },
   { id: "core", label: "Core", short: "CORE", loggable: true },
   { id: "mobility", label: "Mobility", short: "MOB", loggable: true },
+  { id: "pilates", label: "Pilates Reformer", short: "PILATES", loggable: true },
   { id: "cardio", label: "Cardio", short: "CARDIO", loggable: true },
   { id: "rest", label: "Rest", short: "REST", loggable: false },
 ];
@@ -628,6 +629,89 @@ function renderTabs() {
   return wrap;
 }
 
+// Weekly planning lives in Log and saves into the same per-date record as the
+// former planner. At a Glance only reads these values.
+const WEEK_PRIMARY_OPTIONS = [
+  ["", "— Choose Primary —"], ["upper", "Upper lifting"], ["lower", "Lower lifting"],
+  ["fullbody", "Full Body"], ["core", "Core"], ["mob", "Mobility"],
+  ["pilates", "Pilates Reformer"], ["swim", "Swim"], ["ellip", "Elliptical"],
+  ["cardio", "Cardio"], ["cardio-class", "Cardio Class"], ["walk", "Walking"],
+  ["treadmill", "Treadmill"], ["run", "Marathon run"], ["rest", "Rest"],
+];
+const WEEK_LEVELUP_OPTIONS = [
+  ["", "— Choose Level Up —"], ["lu-swim", "Swim"], ["lu-ellip", "Elliptical"],
+  ["lu-dance", "Dance"], ["lu-yoga", "Yoga"], ["lu-meditation", "Meditation"],
+  ["lu-pilates", "Pilates Reformer"], ["lu-walk", "Walking"], ["lu-treadmill", "Treadmill"],
+  ["lu-aquafit", "Aquafit"], ["lu-cooldown", "Mindful Cooldown"],
+  ["lu-core", "Core"], ["lu-mob", "Mobility"], ["lu-rest", "Rest"],
+];
+const PLAN_TO_TRACKER_DAY = {
+  upper:"upper", lower:"lower", core:"core", mob:"mobility", pilates:"pilates",
+  rest:"rest", cardio:"cardio", swim:"cardio", ellip:"cardio", "cardio-class":"cardio",
+  walk:"cardio", treadmill:"cardio", run:"cardio", fullbody:"upper",
+};
+function planOptionsHTML(options, selected) {
+  return options.map(([value,label]) => `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`).join("");
+}
+function planForDate(date) { return logs[date]?.plan || {}; }
+function saveInlinePlan(date, slot, value) {
+  const dayLog = logs[date] || { entries:{} };
+  logs[date] = dayLog;
+  dayLog.plan = { ...(dayLog.plan || {}), [slot]:value, isCommute:false };
+  const mapped = PLAN_TO_TRACKER_DAY[dayLog.plan.primary];
+  if (!dayLogHasRealData(dayLog, date)) {
+    if (mapped) { dayLog.dayId = mapped; dayLog.plan.setDayType = true; }
+    else if (dayLog.plan.setDayType) { delete dayLog.dayId; dayLog.plan.setDayType = false; }
+  }
+  saveLogs(logs);
+  render();
+}
+function weeklyBalance(start) {
+  const counts = { upper:0, lower:0, core:0, mobility:0, rest:0 };
+  for (let i=0;i<7;i++) {
+    const p = planForDate(addDaysIso(start,i));
+    const primary = p.primary || "", levelup = p.levelup || "";
+    if (primary === "upper") counts.upper++;
+    if (primary === "lower") counts.lower++;
+    if (primary === "core" || levelup === "lu-core" || primary === "pilates" || levelup === "lu-pilates") counts.core++;
+    if (primary === "mob" || levelup === "lu-mob" || primary === "pilates" || levelup === "lu-pilates") counts.mobility++;
+    if (primary === "rest") counts.rest++;
+  }
+  return counts;
+}
+function renderWeeklyPlan() {
+  const start = mondayOfIso(state.selectedDate);
+  const end = addDaysIso(start,6);
+  const range = `${fmtDate(start)} – ${fmtDate(end)}, ${isoToParts(end).year}`;
+  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary and Level Up for each dated activity. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower target 1 · Core/Mobility/Rest minimum 1</span></div><div class="log-week-counts"></div></div></section>`);
+  panel.querySelector("h2").textContent = range;
+  const days = panel.querySelector(".log-week-days");
+  WEEKDAY_LABELS.forEach((label,i) => {
+    const date = addDaysIso(start,i), dateObj = new Date(date + "T12:00:00"), plan = planForDate(date);
+    const card = el(`<article class="log-week-day"><div class="log-week-dayhead"><strong></strong><button type="button" class="log-week-open">Log this day</button></div><label>Primary<select class="log-plan-primary"></select></label><label>Level Up<select class="log-plan-levelup"></select></label></article>`);
+    card.querySelector(".log-week-dayhead strong").textContent = `${label} · ${dateObj.toLocaleDateString(undefined,{month:"short",day:"numeric"})}`;
+    card.querySelector(".log-week-open").onclick = () => { state.selectedDate = date; state.selectedDayId = null; render(); window.scrollTo({top:document.querySelector(".day-row")?.offsetTop || 0,behavior:"smooth"}); };
+    const primary = card.querySelector(".log-plan-primary"), levelup = card.querySelector(".log-plan-levelup");
+    primary.innerHTML = planOptionsHTML(WEEK_PRIMARY_OPTIONS, plan.primary || "");
+    levelup.innerHTML = planOptionsHTML(WEEK_LEVELUP_OPTIONS, plan.levelup || "");
+    primary.onchange = () => saveInlinePlan(date,"primary",primary.value);
+    levelup.onchange = () => saveInlinePlan(date,"levelup",levelup.value);
+    days.appendChild(card);
+  });
+  const balance = weeklyBalance(start), holder = panel.querySelector(".log-week-counts");
+  const targets = {upper:1,lower:1,core:1,mobility:1,rest:1};
+  [["Upper","upper"],["Lower","lower"],["Core","core"],["Mobility","mobility"],["Rest","rest"]].forEach(([label,key]) => {
+    const count = balance[key], exactTarget = key === "upper" || key === "lower";
+    const status = exactTarget ? (count === 1 ? "On target" : count === 0 ? "Need 1" : "Over target") : (count >= targets[key] ? "Target met" : "Need 1");
+    const stateClass = status === "On target" || status === "Target met" ? "met" : status === "Over target" ? "over" : "needed";
+    const item = el(`<div class="log-week-count ${stateClass}"><span></span><strong></strong><small></small></div>`);
+    item.querySelector("span").textContent = label;
+    item.querySelector("strong").textContent = `${count} / ${targets[key]}`;
+    item.querySelector("small").textContent = status;
+    holder.appendChild(item);
+  });
+  return panel;
+}
 // Read-only day overview. It draws from the same per-date planner, tracker,
 // class, and marathon records as the other tabs; it never changes completion history.
 const OVERVIEW_QUOTES = [
@@ -647,10 +731,12 @@ function overviewQuote(iso) {
 }
 function overviewDayLabel(date) {
   const day = logs[date] || {};
-  const plannedId = {upper:"upper",lower:"lower",fullbody:"upper",core:"core",mob:"mobility",rest:"rest","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
-  const id = plannedId || (day.plan?.primary ? "cardio" : day.dayId) || null;
-  const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",rest:"Rest Day",cardio:"Cardio Day"};
-  return names[id] || (day.plan?.primary ? PLAN_LABELS[day.plan.primary] || day.plan.primary : null);
+  const plannedId = {upper:"upper",lower:"lower",core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
+  const id = plannedId || (!day.plan?.primary ? day.dayId : null) || null;
+  const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
+  const primary = names[id] || (day.plan?.primary ? PLAN_LABELS[day.plan.primary] || day.plan.primary : null);
+  const extra = day.plan?.levelup ? `Level Up: ${PLAN_LABELS[day.plan.levelup] || day.plan.levelup}` : "";
+  return [primary,extra].filter(Boolean).join(" · ") || null;
 }
 function overviewCardioIcon(name) {
   const value = String(name || "").toLowerCase();
@@ -681,7 +767,7 @@ function overviewActivitiesFor(date) {
   }).filter(session => session.cls);
   const marathonAudioSession = marathonAudioClassSessionFor(date);
   const cardioSessions = sessions.filter(session => session.id !== marathonAudioSession?.sourceId && session.id !== MARATHON_RUN_CLASS_ID && session.cls.id !== marathonAudioSession?.session?.classId && /cardio|walk|run|bike|cycle|ellip|swim|treadmill/i.test(`${session.name} ${session.cls.exercise||""} ${session.cls.title||""}`));
-  const cardioExercises = (dayLog.dayId === "cardio" ? getExerciseList(date, "cardio") : []).map(ex => {
+  const cardioExercises = (dayLog.dayId === "cardio" ? getExerciseList(date, "cardio") : []).filter(ex => !(dayLog.plan?.primary === "pilates" && /pilates/i.test(ex.name || ""))).map(ex => {
     const saved = dayLog.classSessions?.[ex.id] || {};
     const savedClass = classFor(saved.classId);
     const belongsToMarathon = savedClass && marathonAudioSession?.session?.classId === saved.classId;
@@ -768,7 +854,7 @@ function renderDayOverview() {
     slot.querySelector("strong").textContent = label;
     planCard.appendChild(slot);
   } else {
-    planCard.appendChild(el(`<div class="overview-empty">No day plan is saved for this date yet. Choose a date above or use Sunday Planner to set the week.</div>`));
+    planCard.appendChild(el(`<div class="overview-empty">No day plan is saved for this date yet. Set the week in Log.</div>`));
   }
   main.appendChild(planCard);
 
@@ -890,8 +976,10 @@ function renderImportFab() {
 // ---- Today / Log tab ----
 function selectedDayInfo() {
   // Prefer the day-type already saved for this date; otherwise fall back to the in-session pick.
-  const savedType = logs[state.selectedDate]?.dayId;
-  const id = savedType || state.selectedDayId;
+  const dayLog = logs[state.selectedDate];
+  const savedType = dayLog?.dayId;
+  const legacyPilatesPlan = savedType === "cardio" && dayLog?.plan?.primary === "pilates" && !dayLogHasRealData(dayLog,state.selectedDate);
+  const id = legacyPilatesPlan ? "pilates" : (savedType || state.selectedDayId);
   return DAYS.find((d) => d.id === id) || null;
 }
 
@@ -910,7 +998,7 @@ function setDayType(dayId) {
   }
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
-  // Keep the Sunday Planner in step: changing the type here updates that
+  // Keep the weekly plan in step: changing the type here updates that
   // date's planned session (Level Up and commute picks stay as they were).
   const plan = logs[date].plan;
   if (plan && !plan.isCommute) {
@@ -924,6 +1012,14 @@ function setDayType(dayId) {
 
 function renderToday() {
   const wrap = document.createElement("div");
+  const activityDate = el(`<div class="log-activity-date"><div><strong>Activity date</strong><span>This date drives the log and the planner week.</span></div></div>`);
+  activityDate.appendChild(renderDateButton(state.selectedDate, (iso) => {
+    state.selectedDate = iso;
+    state.selectedDayId = null;
+    render();
+  }, "log-activity-date-btn"));
+  wrap.appendChild(activityDate);
+  wrap.appendChild(renderWeeklyPlan());
 
   const dayRow = el(`<div class="day-row"></div>`);
   const current = selectedDayInfo();
@@ -946,11 +1042,6 @@ function renderToday() {
       <div class="day-name">${current ? current.label : "Pick a day type above"}</div>
     </div>
   `);
-  header.appendChild(renderDateButton(state.selectedDate, (iso) => {
-    state.selectedDate = iso;
-    state.selectedDayId = null;
-    render();
-  }));
   wrap.appendChild(header);
   wrap.appendChild(renderDayClassSection(state.selectedDate));
 
@@ -965,7 +1056,7 @@ function renderToday() {
   if (!current) {
     wrap.appendChild(el(`
       <div class="empty-state">
-        Tap Upper, Lower, Core, Mobility, Cardio, or Rest above to set what kind of day this is.
+        Use the weekly plan above, then choose a day type below to log it. Pilates Reformer is available as its own activity.
       </div>
     `));
     return wrap;
@@ -1027,18 +1118,19 @@ function renderToday() {
   return wrap;
 }
 
-// What the Sunday Planner has down for this date (if anything).
+// What the weekly plan has down for this date (if anything).
 const PLAN_LABELS = {
   swim: "Swim", ellip: "Elliptical", upper: "Upper lifting", lower: "Lower lifting", fullbody: "Full Body",
-  core: "Core Toning", mob: "Mobility", pilates: "Pilates", "cardio-class": "Cardio Class", walk: "Walking",
+  core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio Class", walk: "Walking",
   treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
-  "lu-pilates": "Pilates", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
+  "lu-pilates": "Pilates Reformer", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
   "lu-cooldown": "Mindful Cooldown", "lu-rest": "Just rest!", "lu-core": "Core Toning", "lu-mob": "Mobility",
   "walk-lunch": "Walk at lunch",
 };
 function planPrimaryForTracker(date, dayId) {
   if (dayId === "mobility") return "mob";
+  if (dayId === "pilates") return "pilates";
   if (dayId !== "cardio") return dayId; // upper, lower, core, rest match 1:1
   const names = getExerciseList(date, "cardio").map((e) => (e.name || "").toLowerCase()).join(" | ");
   if (/swim|pool|lap/.test(names)) return "swim";
@@ -1376,7 +1468,7 @@ function clearSingleDay(date) {
   const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
   const ok = confirm(`Clear all logged data for ${fmtDate(date)} (${dayInfo ? dayInfo.label : "this day"})?\n\nOnly this one day is affected — nothing else is touched. This can't be undone.`);
   if (!ok) return;
-  // Keep the Sunday Planner's pick for this date; only the logged data goes.
+  // Keep the weekly plan for this date; only the logged data goes.
   const plan = logs[date].plan;
   delete logs[date];
   if (plan) logs[date] = { dayId: dayLog.dayId, entries: {}, plan };

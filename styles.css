@@ -1079,7 +1079,7 @@ select {
 .log-week-balance{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:11px;border-top:1px solid #d9e4db}.log-week-balance>strong{font-size:13px;color:#254c3a}.log-week-counts{display:flex;gap:7px;flex-wrap:wrap}.log-week-count{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:99px;background:#eaf2eb;font-size:12px}.log-week-count strong{color:#1d6946;font-size:14px}
 @media(max-width:720px){.log-week-plan{padding:13px}.log-week-head{flex-direction:column}.log-week-controls{align-self:stretch;justify-content:space-between}.log-week-days{grid-template-columns:repeat(7,minmax(150px,1fr))}}
 /* v53.2 date-driven responsive layout: use desktop width and wrap controls on phones. */
-.tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));overflow:visible}
+.tabs{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:visible}
 .tab-btn{min-width:0;white-space:normal;min-height:44px}
 .day-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:visible}
 .day-pill{min-width:0;flex-shrink:1;padding-left:6px;padding-right:6px}
@@ -1111,3 +1111,9 @@ select {
 .log-week-balance{display:block}.log-week-balance-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}.log-week-balance-head>span{font-size:11px;color:var(--text-dim)}
 .log-week-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.log-week-count{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;padding:8px 10px;border:1px solid #d8e3d9;border-radius:10px;background:#f4f8f4}.log-week-count>span{font-size:12px;font-weight:700}.log-week-count>strong{font-size:15px}.log-week-count>small{grid-column:1/-1;font-size:10px;font-weight:700}.log-week-count.met{border-color:#a9d0b1;background:#edf7ee}.log-week-count.met>small{color:#28723b}.log-week-count.needed{border-color:#e5cc87;background:#fff8e4}.log-week-count.needed>small{color:#8a6314}.log-week-count.over{border-color:#e5afa8;background:#fff0ed}.log-week-count.over>small{color:#9a392e}
 @media(max-width:720px){.log-activity-date{padding:10px;gap:8px}.log-activity-date span{font-size:11px}.log-week-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.log-week-count:last-child{grid-column:1/-1}}
+/* v54: weekly planning and workout logging have separate focused tabs. */
+.plan-page{width:100%;max-width:1240px;margin:0 auto}
+.plan-page .log-week-plan{margin-top:0}
+.plan-page .log-week-day-status{display:block;min-height:16px;margin-top:2px;color:var(--text-dim);font-size:10px;font-weight:750}
+.plan-from-log{display:block;width:auto;margin:12px auto 0;padding:10px 16px}
+@media(min-width:900px){.plan-page .log-week-days{grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}.plan-page .log-week-day{padding:12px}}

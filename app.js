@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v53.2 draft";
+const APP_VERSION = "v54 draft";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -571,13 +571,14 @@ function render() {
   app.appendChild(renderTabs());
 
   if (state.tab === "overview") app.appendChild(renderOverview());
+  if (state.tab === "plan") app.appendChild(renderPlan());
   if (state.tab === "today") app.appendChild(renderToday());
   if (state.tab === "run") app.appendChild(renderRun());
   if (state.tab === "history") app.appendChild(renderHistory());
   if (state.tab === "classes") app.appendChild(renderClasses());
   if (state.tab === "progress") app.appendChild(renderProgress());
 
-  if (state.tab === "today") app.appendChild(renderFab());
+  if (state.tab === "today" && selectedDayInfo()) app.appendChild(renderFab());
 }
 
 function renderOfflineBanner() {
@@ -621,7 +622,7 @@ function setSyncStatus(next) {
 
 function renderTabs() {
   const wrap = el(`<div class="tabs"></div>`);
-  [["overview", "AT A GLANCE"], ["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
+  [["overview", "AT A GLANCE"], ["plan", "PLAN"], ["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
     const btn = el(`<button class="tab-btn ${state.tab === id ? "active" : ""}">${label}</button>`);
     btn.onclick = () => { state.tab = id; render(); };
     wrap.appendChild(btn);
@@ -635,7 +636,7 @@ const WEEK_PRIMARY_OPTIONS = [
   ["", "— Choose Primary —"], ["upper", "Upper lifting"], ["lower", "Lower lifting"],
   ["fullbody", "Full Body"], ["core", "Core"], ["mob", "Mobility"],
   ["pilates", "Pilates Reformer"], ["swim", "Swim"], ["ellip", "Elliptical"],
-  ["cardio", "Cardio"], ["cardio-class", "Cardio Class"], ["walk", "Walking"],
+  ["cardio", "Cardio"], ["walk", "Walking"],
   ["treadmill", "Treadmill"], ["run", "Marathon run"], ["rest", "Rest"],
 ];
 const WEEK_LEVELUP_OPTIONS = [
@@ -651,13 +652,15 @@ const PLAN_TO_TRACKER_DAY = {
   walk:"cardio", treadmill:"cardio", run:"cardio", fullbody:"upper",
 };
 function planOptionsHTML(options, selected) {
-  return options.map(([value,label]) => `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`).join("");
+  const shown = selected === "cardio-class" ? "cardio" : selected;
+  return options.map(([value,label]) => `<option value="${value}"${value === shown ? " selected" : ""}>${label}</option>`).join("");
 }
 function planForDate(date) { return logs[date]?.plan || {}; }
 function saveInlinePlan(date, slot, value) {
   const dayLog = logs[date] || { entries:{} };
   logs[date] = dayLog;
   dayLog.plan = { ...(dayLog.plan || {}), [slot]:value, isCommute:false };
+  if (dayLog.plan.primary === "cardio-class") dayLog.plan.primary = "cardio";
   const mapped = PLAN_TO_TRACKER_DAY[dayLog.plan.primary];
   if (!dayLogHasRealData(dayLog, date)) {
     if (mapped) { dayLog.dayId = mapped; dayLog.plan.setDayType = true; }
@@ -679,6 +682,24 @@ function weeklyBalance(start) {
   }
   return counts;
 }
+function renderActivityDateBar() {
+  const bar = el(`<div class="log-activity-date"><div><strong>Activity date</strong><span></span></div></div>`);
+  bar.querySelector("span").textContent = state.tab === "plan"
+    ? "The planner week follows this shared date."
+    : "Log the activity planned for this date.";
+  bar.appendChild(renderDateButton(state.selectedDate, (iso) => {
+    state.selectedDate = iso;
+    state.selectedDayId = null;
+    render();
+  }, "log-activity-date-btn"));
+  return bar;
+}
+function renderPlan() {
+  const page = el(`<main class="plan-page"></main>`);
+  page.appendChild(renderActivityDateBar());
+  page.appendChild(renderWeeklyPlan());
+  return page;
+}
 function renderWeeklyPlan() {
   const start = mondayOfIso(state.selectedDate);
   const end = addDaysIso(start,6);
@@ -688,9 +709,13 @@ function renderWeeklyPlan() {
   const days = panel.querySelector(".log-week-days");
   WEEKDAY_LABELS.forEach((label,i) => {
     const date = addDaysIso(start,i), dateObj = new Date(date + "T12:00:00"), plan = planForDate(date);
-    const card = el(`<article class="log-week-day"><div class="log-week-dayhead"><strong></strong><button type="button" class="log-week-open">Log this day</button></div><label>Primary<select class="log-plan-primary"></select></label><label>Level Up<select class="log-plan-levelup"></select></label></article>`);
+    const card = el(`<article class="log-week-day"><div class="log-week-dayhead"><div><strong></strong><span class="log-week-day-status"></span></div><button type="button" class="log-week-open">Open Log</button></div><label>Primary<select class="log-plan-primary"></select></label><label>Level Up<select class="log-plan-levelup"></select></label></article>`);
     card.querySelector(".log-week-dayhead strong").textContent = `${label} · ${dateObj.toLocaleDateString(undefined,{month:"short",day:"numeric"})}`;
-    card.querySelector(".log-week-open").onclick = () => { state.selectedDate = date; state.selectedDayId = null; render(); window.scrollTo({top:document.querySelector(".day-row")?.offsetTop || 0,behavior:"smooth"}); };
+    const hasPlan = !!(plan.primary || plan.levelup);
+    const hasCompleted = dayLogHasRealData(logs[date],date) || runHasData(runRecord(date));
+    const status = card.querySelector(".log-week-day-status");
+    status.textContent = hasCompleted ? (hasPlan ? "Planned · logged" : "Logged") : hasPlan ? "Planned" : "";
+    card.querySelector(".log-week-open").onclick = () => { state.selectedDate = date; state.selectedDayId = null; state.tab = "today"; render(); window.scrollTo({top:0,behavior:"smooth"}); };
     const primary = card.querySelector(".log-plan-primary"), levelup = card.querySelector(".log-plan-levelup");
     primary.innerHTML = planOptionsHTML(WEEK_PRIMARY_OPTIONS, plan.primary || "");
     levelup.innerHTML = planOptionsHTML(WEEK_LEVELUP_OPTIONS, plan.levelup || "");
@@ -979,7 +1004,8 @@ function selectedDayInfo() {
   const dayLog = logs[state.selectedDate];
   const savedType = dayLog?.dayId;
   const legacyPilatesPlan = savedType === "cardio" && dayLog?.plan?.primary === "pilates" && !dayLogHasRealData(dayLog,state.selectedDate);
-  const id = legacyPilatesPlan ? "pilates" : (savedType || state.selectedDayId);
+  const plannedType = PLAN_TO_TRACKER_DAY[dayLog?.plan?.primary];
+  const id = legacyPilatesPlan ? "pilates" : (savedType || plannedType || state.selectedDayId);
   return DAYS.find((d) => d.id === id) || null;
 }
 
@@ -1012,36 +1038,9 @@ function setDayType(dayId) {
 
 function renderToday() {
   const wrap = document.createElement("div");
-  const activityDate = el(`<div class="log-activity-date"><div><strong>Activity date</strong><span>This date drives the log and the planner week.</span></div></div>`);
-  activityDate.appendChild(renderDateButton(state.selectedDate, (iso) => {
-    state.selectedDate = iso;
-    state.selectedDayId = null;
-    render();
-  }, "log-activity-date-btn"));
-  wrap.appendChild(activityDate);
-  wrap.appendChild(renderWeeklyPlan());
-
-  const dayRow = el(`<div class="day-row"></div>`);
+  wrap.appendChild(renderActivityDateBar());
   const current = selectedDayInfo();
-  DAYS.forEach((d) => {
-    const isActive = current && current.id === d.id;
-    const hasLogged = logs[state.selectedDate]?.dayId === d.id && dayLogHasRealData(logs[state.selectedDate], state.selectedDate);
-    const pill = el(`
-      <button class="day-pill ${isActive ? "active" : ""} ${hasLogged ? "done" : ""}" title="${d.label}">
-        <span>${d.short}</span>
-        <span class="dot"></span>
-      </button>
-    `);
-    pill.onclick = () => setDayType(d.id);
-    dayRow.appendChild(pill);
-  });
-  wrap.appendChild(dayRow);
-
-  const header = el(`
-    <div class="day-header">
-      <div class="day-name">${current ? current.label : "Pick a day type above"}</div>
-    </div>
-  `);
+  const header = el(`<div class="day-header"><div class="day-name">${current ? current.label : "No activity planned"}</div></div>`);
   wrap.appendChild(header);
   wrap.appendChild(renderDayClassSection(state.selectedDate));
 
@@ -1054,11 +1053,11 @@ function renderToday() {
   if (runStrip) wrap.appendChild(runStrip);
 
   if (!current) {
-    wrap.appendChild(el(`
-      <div class="empty-state">
-        Use the weekly plan above, then choose a day type below to log it. Pilates Reformer is available as its own activity.
-      </div>
-    `));
+    const prompt = el(`<div class="empty-state">Choose this date’s Primary activity in Plan, then return here to log it.</div>`);
+    const button = el(`<button class="btn-primary plan-from-log">Open Plan</button>`);
+    button.onclick = () => { state.tab = "plan"; render(); };
+    prompt.appendChild(button);
+    wrap.appendChild(prompt);
     return wrap;
   }
 
@@ -1121,7 +1120,7 @@ function renderToday() {
 // What the weekly plan has down for this date (if anything).
 const PLAN_LABELS = {
   swim: "Swim", ellip: "Elliptical", upper: "Upper lifting", lower: "Lower lifting", fullbody: "Full Body",
-  core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio Class", walk: "Walking",
+  core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio", walk: "Walking",
   treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
   "lu-pilates": "Pilates Reformer", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
@@ -1138,7 +1137,7 @@ function planPrimaryForTracker(date, dayId) {
   if (/treadmill/.test(names)) return "treadmill";
   if (/walk/.test(names)) return "walk";
   if (/pilates/.test(names)) return "pilates";
-  if (/class/.test(names)) return "cardio-class";
+  if (/class/.test(names)) return "cardio";
   return "cardio";
 }
 function renderPlanNote(date) {

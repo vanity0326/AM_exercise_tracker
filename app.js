@@ -794,14 +794,14 @@ function planOptionsHTML(options, selected, includeExerciseBank = false, savedBa
   const selectedIsPreset = options.some(([value]) => value === shown);
   if (shown && !selectedBankEntryExists && !selectedIsPreset) {
     const legacyLabel = shown === "lu-marathon"
-      ? `${savedBankLabel || PLAN_LABELS[shown] || "Marathon Program"} · ${dayDesignationLabel(marathonDesignationId())}`
+      ? savedBankLabel || PLAN_LABELS[shown] || "Marathon Program"
       : PLAN_LABELS[shown] || savedBankLabel || "Previous Level Up";
-    html += `<option value="${safeText(shown)}" selected disabled>Previously planned: ${safeText(legacyLabel)}</option>`;
+    const displayLabel = shown === "lu-marathon" ? legacyLabel : `Previously planned: ${legacyLabel}`;
+    html += `<option value="${safeText(shown)}" selected disabled>${safeText(displayLabel)}</option>`;
   }
   html += `<optgroup label="Exercise bank">${bankEntries.map(([key,entry]) => {
     const value = `lu-bank:${key}`;
-     const designation = entry.dayDesignation ? ` · ${dayDesignationLabel(entry.dayDesignation)}` : " · Unassigned";
-     return `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(entry.name + designation)}</option>`;
+     return `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(entry.name)}</option>`;
   }).join("")}`;
   if (selectedBankKey && !selectedBankEntryExists && savedBankLabel) {
     const value = `lu-bank:${selectedBankKey}`;
@@ -817,11 +817,6 @@ function planOptionLabel(value, plan = null) {
   }
   if (value === "lu-marathon") return plan?.levelupName || PLAN_LABELS[value] || "Marathon Program";
   return PLAN_LABELS[value] || value || "";
-}
-function levelUpDesignationId(value) {
-  if (value === "lu-marathon") return marathonDesignationId();
-  if (value?.startsWith("lu-bank:")) return bank[value.slice("lu-bank:".length)]?.dayDesignation || "";
-  return "";
 }
 function planForDate(date) { return logs[date]?.plan || {}; }
 function saveInlinePlan(date, slot, value) {
@@ -946,8 +941,7 @@ function overviewDayLabel(date) {
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
   const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
-  const levelupDesignation = levelUpDesignationId(day.plan?.levelup);
-  const extra = day.plan?.levelup ? `Level Up: ${planOptionLabel(day.plan.levelup, day.plan)}${levelupDesignation ? ` (${dayDesignationLabel(levelupDesignation)})` : ""}` : "";
+  const extra = day.plan?.levelup ? planOptionLabel(day.plan.levelup, day.plan) : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
 }
 function overviewCardioIcon(name) {
@@ -1335,10 +1329,7 @@ function renderPlanNote(date) {
   else {
     const parts = [];
     if (plan.primary) parts.push(planPrimaryLabel(plan.primary));
-    if (plan.levelup) {
-      const designation = levelUpDesignationId(plan.levelup);
-      parts.push(`Level Up: ${planOptionLabel(plan.levelup, plan)}${designation ? ` (${dayDesignationLabel(designation)})` : ""}`);
-    }
+    if (plan.levelup) parts.push(planOptionLabel(plan.levelup, plan));
     if (!parts.length) return null;
     text = parts.join(", ");
   }

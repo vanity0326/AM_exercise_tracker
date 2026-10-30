@@ -4,6 +4,14 @@ let classes = (() => { try { return JSON.parse(localStorage.getItem(LS_CLASSES) 
 function saveClasses() { localStorage.setItem(LS_CLASSES, JSON.stringify(classes)); touchLocalUpdatedAt(); schedulePush(); }
 function safeText(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function classFor(id) { return classes.find(c => c.id === id); }
+function migrateWalkRunClassTitles() {
+ let changed=false;
+ classes=classes.map(c=>{
+  if(c&&/^\s*walk\s*\/\s*run\s*$/i.test(String(c.title||''))){changed=true;return {...c,title:'Stride'};}
+  return c;
+ });
+ return changed;
+}
 const MARATHON_RUN_CLASS_ID = "marathon_walk_run";
 function marathonAudioClassSessionFor(date) {
  const explicit=logs[date]?.classSessions?.[MARATHON_RUN_CLASS_ID];
@@ -12,7 +20,7 @@ function marathonAudioClassSessionFor(date) {
  const match=Object.entries(logs[date]?.classSessions||{}).find(([id,s])=>{
   if(!s?.classId||id===MARATHON_RUN_CLASS_ID)return false;
   const c=classFor(s.classId);
-  return !!c&&/walk\s*\/\s*run|walk\s+run|run\s*\/\s*walk/i.test(`${c.title||""} ${c.exercise||""}`);
+  return !!c&&/walk\s*\/\s*run|walk\s+run|run\s*\/\s*walk|stride/i.test(`${c.title||""} ${c.exercise||""}`);
  });
  return match?{session:match[1],sourceId:match[0],inherited:true}:null;
 }
@@ -24,7 +32,7 @@ function classPickerMarkup(selected='',exercise='') {
  return `<div class="cl-picker" data-exercise="${safeText(exercise)}"><input type="hidden" name="classId" value="${safeText(selected)}"><input class="cl-picker-search" type="search" autocomplete="off" placeholder="Search episode, instructor, title, date, music…" aria-label="Find saved class" value="${safeText(c?classLabel(c):'')}"><label class="cl-picker-filter"><input type="checkbox" class="cl-only-exercise" ${exercise?'checked':''}> Match this exercise</label><div class="cl-picker-results" role="listbox"></div></div>`;
 }
 function normalizeClassExercise(x){return String(x||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');}
-function exerciseMatches(c,exercise){const x=normalizeClassExercise(exercise), y=normalizeClassExercise(c.exercise), title=normalizeClassExercise(c.title);if(!x)return true;if(x===y)return true;if(x.includes('marathon')&&/walk|run/.test(x)&&/walk|run/.test(`${y} ${title}`))return true;return (x.includes('recumbent')&&(/cycle|bike|cycling/.test(y)||/cycle|cycling/.test(title)))||(x.includes('treadmill')&&(/walk|run|treadmill/.test(y)||/walk|run/.test(title)));}
+function exerciseMatches(c,exercise){const x=normalizeClassExercise(exercise), y=normalizeClassExercise(c.exercise), title=normalizeClassExercise(c.title);if(!x)return true;if(x===y)return true;if(x.includes('marathon')&&/walk|run/.test(x)&&/walk|run|stride/.test(`${y} ${title}`))return true;return (x.includes('recumbent')&&(/cycle|bike|cycling/.test(y)||/cycle|cycling/.test(title)))||(x.includes('treadmill')&&(/walk|run|treadmill|stride/.test(y)||/walk|run|stride/.test(title)));}
 function wireClassPicker(overlay){
  const picker=overlay.querySelector('.cl-picker');if(!picker)return;
  const field=picker.querySelector('input[name=classId]'),search=picker.querySelector('.cl-picker-search'),list=picker.querySelector('.cl-picker-results'),filter=picker.querySelector('.cl-only-exercise');

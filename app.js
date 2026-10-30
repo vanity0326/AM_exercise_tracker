@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v55.3";
+const APP_VERSION = "v56";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -366,6 +366,7 @@ async function pullRemote(isInitial) {
         const merged = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
         localClasses.forEach(c => { if (c && c.id) merged.set(c.id, c); });
         classes = [...merged.values()];
+        migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
         setSyncStatus("syncing");
         pushRemote();
@@ -377,6 +378,7 @@ async function pullRemote(isInitial) {
       const remoteHasClasses = Array.isArray(remote.classes);
       const remoteClasses = remoteHasClasses ? remote.classes : [];
       let repairRemoteClasses = !remoteHasClasses;
+      let relabeledClassTitles = false;
       suppressPush = true;
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
       logs = remote.logs || {};
@@ -396,6 +398,7 @@ async function pullRemote(isInitial) {
         classes = [...mergedClasses.values()];
         if (classes.length > remoteClasses.length) repairRemoteClasses = true;
       }
+      relabeledClassTitles = migrateWalkRunClassTitles();
       // Older copies of the sync function didn't store the marathon plan —
       // if the remote has none, keep this device's copy instead of wiping it.
       if (remote.marathon) marathon = { ...structuredClone(DEFAULT_MARATHON), ...remote.marathon };
@@ -407,7 +410,7 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       ensureStarterBankEntries();
-      if (repairRemoteClasses || repairRemoteDayDesignations) {
+      if (repairRemoteClasses || repairRemoteDayDesignations || relabeledClassTitles) {
         touchLocalUpdatedAt();
         schedulePush();
       } else {
@@ -418,6 +421,7 @@ async function pullRemote(isInitial) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
       ensureStarterBankEntries();
+      if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
       setSyncStatus("synced");
@@ -461,6 +465,10 @@ function pushRemote() {
 let library = loadLibrary();
 let logs = loadLogs();
 let bank = loadBank();
+// Show the updated class label even offline. Do not stamp this local-only
+// rename as a user edit; the next successful remote merge migrates and pushes
+// the merged catalog without making stale local workout data look newer.
+if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
 let state = {
   tab: "overview",
   overviewMode: "day",
@@ -483,11 +491,11 @@ if (location.protocol === "file:" && Object.keys(logs).length === 0 && classes.l
   };
   classes = [
     { id:classIds.cycle3, title:"Cycle", episode:"03", instructor:"Tyrell", exercise:"Recumbent Bike" },
-    { id:classIds.elliptical98, title:"Walk/Run", episode:"98", instructor:"Sherica", exercise:"Elliptical" },
-    { id:classIds.walkRun2, title:"Walk/Run", episode:"02", instructor:"AM", exercise:"Walking Outside" },
-    { id:classIds.walkRun1, title:"Walk/Run", episode:"01", instructor:"AM", exercise:"Walking Outside" },
+    { id:classIds.elliptical98, title:"Stride", episode:"98", instructor:"Sherica", exercise:"Elliptical" },
+    { id:classIds.walkRun2, title:"Stride", episode:"02", instructor:"AM", exercise:"Walking Outside" },
+    { id:classIds.walkRun1, title:"Stride", episode:"01", instructor:"AM", exercise:"Walking Outside" },
     { id:classIds.cycle288, title:"Cycle", episode:"288", instructor:"Tyrell", exercise:"Recumbent Bike" },
-    { id:classIds.walkRun10, title:"Walk/Run", episode:"10", instructor:"Sam", exercise:"Elliptical" },
+    { id:classIds.walkRun10, title:"Stride", episode:"10", instructor:"Sam", exercise:"Elliptical" },
   ];
   const sampleDay = (dayId, primary, extra = {}) => ({ dayId, entries:{}, plan:{ primary }, ...extra });
   logs[previewWeek] = sampleDay("lower", "lower", { classSessions:{ previewBike:{ exerciseName:"Bike (Recumbent)", classId:classIds.cycle3 } } });

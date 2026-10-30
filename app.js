@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v55.1";
+const APP_VERSION = "v55.3";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -265,15 +265,36 @@ function inferBankDesignation(name, entry = {}) {
   Object.values(logs || {}).forEach(day => Object.entries(day.lists || {}).forEach(([listKey,list]) => inspectList(listKey,list)));
   return matches.size === 1 ? [...matches][0] : "";
 }
+const STARTER_BANK_ENTRIES = [
+  ["Dance", "cardio"], ["Cycle", "cardio"], ["Yoga", "mobility"],
+  ["Meditation", "mindful-recovery"], ["Aquafit", "cardio"],
+  ["Mindful Cooldown", "mindful-recovery"], ["Core", "core"],
+  ["Pilates (Reformer)", "pilates"], ["Pilates (Mat)", "pilates"], ["Marathon Training", "cardio"],
+];
+function hasMeaningfulLocalData() {
+  if (Object.values(library || {}).some(list => Array.isArray(list) && list.length)) return true;
+  if (Object.keys(logs || {}).length || (classes || []).length) return true;
+  if (marathon?.settings || Object.keys(marathon?.runs || {}).length) return true;
+  if (dayDesignations.some(day => {
+    const original = DEFAULT_DAY_DESIGNATIONS.find(item => item.id === day.id);
+    return !original || day.label !== original.label || day.loggable !== original.loggable;
+  })) return true;
+  const defaults = new Map(STARTER_BANK_ENTRIES.map(([name,dayDesignation]) => [bankKey(name), {name,dayDesignation}]));
+  const keys = Object.keys(bank || {});
+  if (keys.some(key => !defaults.has(key))) return true;
+  const starterKeys = keys.filter(key => defaults.has(key));
+  if (starterKeys.length && starterKeys.length < defaults.size) return true;
+  return starterKeys.some(key => {
+    const entry = bank[key], original = defaults.get(key);
+    return entry.name !== original.name || entry.type !== "other" || entry.trackType !== "duration"
+      || JSON.stringify(entry.weights || []) !== JSON.stringify([DEFAULT_TARGET_MINUTES])
+      || JSON.stringify(entry.targets || []) !== JSON.stringify([DEFAULT_TARGET_MINUTES])
+      || !!entry.customUnit || entry.dayDesignation !== original.dayDesignation;
+  });
+}
 function ensureStarterBankEntries() {
   let changed = false;
-  const starterEntries = [
-    ["Dance", "cardio"], ["Cycle", "cardio"], ["Yoga", "mobility"],
-    ["Meditation", "mindful-recovery"], ["Aquafit", "cardio"],
-    ["Mindful Cooldown", "mindful-recovery"], ["Core", "core"],
-    ["Pilates (Reformer)", "pilates"], ["Pilates (Mat)", "pilates"], ["Marathon Training", "cardio"],
-  ];
-  starterEntries.forEach(([name,dayDesignation]) => {
+  STARTER_BANK_ENTRIES.forEach(([name,dayDesignation]) => {
     const key = bankKey(name);
     if (!bank[key]) {
       bank[key] = { name, type:"other", trackType:"duration", weights:[DEFAULT_TARGET_MINUTES], targets:[DEFAULT_TARGET_MINUTES], customUnit:null, dayDesignation };
@@ -288,10 +309,9 @@ function ensureStarterBankEntries() {
     const inferred = inferBankDesignation(entry.name || key, entry);
     if (inferred) { entry.dayDesignation = inferred; changed = true; }
   });
-  Object.values(logs || {}).forEach(day => {
-    if (day?.plan?.levelup === "lu-marathon") { day.plan.levelup = "lu-bank:marathon training"; day.plan.levelupName = "Marathon Training"; changed = true; }
-  });
-  if (changed) { saveBank(bank); saveLogs(logs); }
+  // Keep saved plan identity and historical labels intact. Legacy Marathon
+  // Program selections resolve through the Marathon Training bank item at render time.
+  if (changed) saveBank(bank);
 }
 function bankKey(name) {
   return name.trim().toLowerCase();
@@ -333,7 +353,7 @@ async function pullRemote(isInitial) {
       // refresh right after tapping something).
       const remoteTime = remote.updatedAt ? Date.parse(remote.updatedAt) : 0;
       const localTime = getLocalUpdatedAt();
-      if (localTime > 0 && localTime >= remoteTime) {
+      if (localTime > 0 && localTime >= remoteTime && hasMeaningfulLocalData()) {
         // Keep newer local workout data, but ALWAYS merge the class catalog
         // from the remote snapshot before pushing. The timestamp covers all
         // data, so a recent workout edit on a device with an empty/stale local
@@ -394,8 +414,10 @@ async function pullRemote(isInitial) {
         setSyncStatus("synced");
       }
       render();
-    } else if (isInitial) {
-      // Nothing saved remotely yet — seed it with whatever's on this device.
+    } else if (isInitial || !Object.keys(bank).length) {
+      // Seed only after confirming the remote store is empty. Seeding before this
+      // point stamps local storage as newer and can overwrite data on a new device.
+      ensureStarterBankEntries();
       pushRemote();
     } else {
       setSyncStatus("synced");
@@ -484,7 +506,6 @@ if (location.protocol === "file:" && Object.keys(logs).length === 0 && classes.l
   if (!marathon.settings) marathon.settings = { startDate:previewWeek, raceName:"", raceDate:"" };
   if (!marathon.sequence.length) marathon.sequence = [{ w:1 }];
 }
-if (location.protocol !== "file:") ensureStarterBankEntries();
 
 // ---------- Helpers ----------
 // Local calendar date (not UTC). toISOString() is UTC, which in Central
@@ -755,6 +776,12 @@ function trackerDayForPlanPrimary(primary) {
   if (primary === "run") return marathonDesignationId();
   return PLAN_TO_TRACKER_DAY[primary] || (DAYS.some(day => day.id === primary) ? primary : null);
 }
+function planPrimaryLabel(value) {
+  if (!value) return "";
+  if (value === "run") return `Marathon run (${dayDesignationLabel(marathonDesignationId())})`;
+  const customDay = dayDesignations.find(day => day.primaryValue === value || day.id === value);
+  return customDay?.label || PLAN_LABELS[value] || value;
+}
 function planOptionsHTML(options, selected, includeExerciseBank = false, savedBankLabel = "") {
   const shown = selected === "cardio-class" ? "cardio" : selected;
   let html = options.map(([value,label]) => `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(label)}</option>`).join("");
@@ -766,12 +793,15 @@ function planOptionsHTML(options, selected, includeExerciseBank = false, savedBa
   const selectedBankEntryExists = !!(selectedBankKey && bank[selectedBankKey]?.name);
   const selectedIsPreset = options.some(([value]) => value === shown);
   if (shown && !selectedBankEntryExists && !selectedIsPreset) {
-    const legacyLabel = PLAN_LABELS[shown] || savedBankLabel || "Previous Level Up";
+    const legacyLabel = shown === "lu-marathon"
+      ? `${savedBankLabel || PLAN_LABELS[shown] || "Marathon Program"} · ${dayDesignationLabel(marathonDesignationId())}`
+      : PLAN_LABELS[shown] || savedBankLabel || "Previous Level Up";
     html += `<option value="${safeText(shown)}" selected disabled>Previously planned: ${safeText(legacyLabel)}</option>`;
   }
   html += `<optgroup label="Exercise bank">${bankEntries.map(([key,entry]) => {
     const value = `lu-bank:${key}`;
-    return `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(entry.name)}</option>`;
+     const designation = entry.dayDesignation ? ` · ${dayDesignationLabel(entry.dayDesignation)}` : " · Unassigned";
+     return `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(entry.name + designation)}</option>`;
   }).join("")}`;
   if (selectedBankKey && !selectedBankEntryExists && savedBankLabel) {
     const value = `lu-bank:${selectedBankKey}`;
@@ -785,7 +815,13 @@ function planOptionLabel(value, plan = null) {
     const key = value.slice("lu-bank:".length);
     return bank[key]?.name || (plan?.levelup === value ? plan.levelupName : "") || "Banked exercise";
   }
+  if (value === "lu-marathon") return plan?.levelupName || PLAN_LABELS[value] || "Marathon Program";
   return PLAN_LABELS[value] || value || "";
+}
+function levelUpDesignationId(value) {
+  if (value === "lu-marathon") return marathonDesignationId();
+  if (value?.startsWith("lu-bank:")) return bank[value.slice("lu-bank:".length)]?.dayDesignation || "";
+  return "";
 }
 function planForDate(date) { return logs[date]?.plan || {}; }
 function saveInlinePlan(date, slot, value) {
@@ -910,8 +946,7 @@ function overviewDayLabel(date) {
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
   const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
-  const levelupKey = day.plan?.levelup?.startsWith("lu-bank:") ? day.plan.levelup.slice(8) : "";
-  const levelupDesignation = levelupKey ? bank[levelupKey]?.dayDesignation : day.plan?.levelup === "lu-marathon" ? marathonDesignationId() : "";
+  const levelupDesignation = levelUpDesignationId(day.plan?.levelup);
   const extra = day.plan?.levelup ? `Level Up: ${planOptionLabel(day.plan.levelup, day.plan)}${levelupDesignation ? ` (${dayDesignationLabel(levelupDesignation)})` : ""}` : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
 }
@@ -975,7 +1010,7 @@ function overviewActivitiesFor(date) {
   if (run?.workout) {
     addActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), [run.workout.title, run.workout.detail].filter(Boolean).join(" · "));
   } else if (!activities.length && dayLog.plan?.primary && /swim|ellip|treadmill|walk|run|cardio/i.test(dayLog.plan.primary)) {
-    addActivity(PLAN_LABELS[dayLog.plan.primary] || dayLog.plan.primary, null);
+    addActivity(planPrimaryLabel(dayLog.plan.primary), null);
   }
   return activities;
 }
@@ -1299,8 +1334,11 @@ function renderPlanNote(date) {
   if (plan.isCommute) text = `Commute day: ${PLAN_LABELS[plan.commute] || "walk at lunch"}`;
   else {
     const parts = [];
-    if (plan.primary) parts.push(PLAN_LABELS[plan.primary] || plan.primary);
-    if (plan.levelup) parts.push(`Level Up: ${planOptionLabel(plan.levelup, plan)}`);
+    if (plan.primary) parts.push(planPrimaryLabel(plan.primary));
+    if (plan.levelup) {
+      const designation = levelUpDesignationId(plan.levelup);
+      parts.push(`Level Up: ${planOptionLabel(plan.levelup, plan)}${designation ? ` (${dayDesignationLabel(designation)})` : ""}`);
+    }
     if (!parts.length) return null;
     text = parts.join(", ");
   }
@@ -1777,9 +1815,15 @@ function renderHistory() {
   dates.forEach((date) => {
     const dayLog = logs[date] || { entries: {} };
     const runLine = runHistoryLine(date);
-    const historicalDayId = dayLog.plan?.primary === "run" || runLine ? marathonDesignationId() : dayLog.dayId;
-    const dayInfo = DAYS.find((d) => d.id === historicalDayId);
-    const dayLabels = [dayInfo ? dayInfo.label : "", runLine ? "Run" : ""].filter(Boolean).join(" + ");
+    const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
+    const marathonDayInfo = dayLog.plan?.primary === "run" || runLine
+      ? DAYS.find((d) => d.id === marathonDesignationId())
+      : null;
+    const dayLabels = [...new Set([
+      dayInfo?.label || "",
+      marathonDayInfo && marathonDayInfo.id !== dayInfo?.id ? marathonDayInfo.label : "",
+      runLine ? "Run" : "",
+    ].filter(Boolean))].join(" + ");
     const card = el(`
       <div class="hist-card">
         <div class="hist-card-top">
@@ -2436,12 +2480,35 @@ function openBankManagerModal(onClose) {
         <div class="bank-row">
           <div>
             <div class="bank-row-name">${entry.name}</div>
-            <div class="bank-row-meta">${TRACK_TYPES[entry.trackType]?.label || entry.trackType}</div><label class="bank-day-label">Day designation<select class="bank-day-designation"><option value=""${entry.dayDesignation?"":" selected"}>Unassigned</option>${dayDesignations.map(d=>`<option value="${safeText(d.id)}"${entry.dayDesignation===d.id?" selected":""}>${safeText(d.label)}</option>`).join("")}</select></label>
+            <div class="bank-row-meta">${TRACK_TYPES[entry.trackType]?.label || entry.trackType}</div><div class="bank-current-designation">Currently: ${safeText(dayDesignationLabel(entry.dayDesignation) || "Unassigned")}</div><label class="bank-day-label">Change day designation<select class="bank-day-designation"><option value=""${entry.dayDesignation?"":" selected"}>Unassigned</option>${dayDesignations.map(d=>`<option value="${safeText(d.id)}"${entry.dayDesignation===d.id?" selected":""}>${safeText(d.label)}</option>`).join("")}</select></label><div class="bank-designation-preview" hidden></div><div class="bank-designation-actions" hidden><button type="button" class="btn-primary bank-designation-save">Save change</button><button type="button" class="btn-secondary bank-designation-cancel">Cancel</button></div>
           </div>
           <button class="bank-row-delete-btn" title="Remove from bank">✕</button>
         </div>
       `);
-      row.querySelector(".bank-day-designation").onchange = e => { bank[key].dayDesignation=e.target.value; saveBank(bank); };
+      const designationSelect = row.querySelector(".bank-day-designation");
+      const savedDesignation = entry.dayDesignation || "";
+      const preview = row.querySelector(".bank-designation-preview");
+      const actions = row.querySelector(".bank-designation-actions");
+      const saveDesignationButton = row.querySelector(".bank-designation-save");
+      const cancelDesignationButton = row.querySelector(".bank-designation-cancel");
+      const designationName = id => id ? dayDesignationLabel(id) : "Unassigned";
+      const updateDesignationPreview = () => {
+        const next = designationSelect.value;
+        const changed = next !== savedDesignation;
+        preview.hidden = !changed;
+        actions.hidden = !changed;
+        if (changed) preview.textContent = `${entry.name}: ${designationName(savedDesignation)} → ${designationName(next)}. This updates how plans, At a Glance, and History group or label this exercise. Its name, dates, and logged results stay the same.`;
+      };
+      designationSelect.onchange = updateDesignationPreview;
+      saveDesignationButton.onclick = () => {
+        const next = designationSelect.value;
+        if (next === savedDesignation) return;
+        bank[key].dayDesignation = next;
+        saveBank(bank);
+        render();
+        renderList();
+      };
+      cancelDesignationButton.onclick = () => { designationSelect.value = savedDesignation; updateDesignationPreview(); };
       row.querySelector(".bank-row-delete-btn").onclick = () => {
         if (!confirm(`Remove "${entry.name}" from your bank?\n\nIt stays untouched on any day it's currently placed on, and in logged history — this only removes it from the quick-pick list.`)) return;
         delete bank[key];
@@ -2501,11 +2568,13 @@ function openBankManagerModal(onClose) {
   };
 
   overlay.appendChild(modal);
-  overlay.onclick = (e) => { if (e.target === overlay) { document.body.removeChild(overlay); if (onClose) onClose(); } };
-  modal.querySelector("#bank-manager-close-btn").onclick = () => {
+  const closeBankManager = () => {
     document.body.removeChild(overlay);
     if (onClose) onClose();
+    render();
   };
+  overlay.onclick = (e) => { if (e.target === overlay) closeBankManager(); };
+  modal.querySelector("#bank-manager-close-btn").onclick = closeBankManager;
 
   document.body.appendChild(overlay);
   trapFocus(overlay);

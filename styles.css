@@ -1118,3 +1118,9 @@ select {
 .plan-from-log{display:block;width:auto;margin:12px auto 0;padding:10px 16px}
 @media(min-width:900px){.plan-page .log-week-days{grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}.plan-page .log-week-day{padding:12px}}
 .hist-ex-designation { display:inline-block; margin:0 4px; padding:1px 6px; border-radius:999px; background:#e8f0e9; color:#315d49; font-size:.78em; }
+
+/* Bank designation changes are previewed and saved explicitly. */
+.bank-current-designation{margin-top:5px;color:var(--text-dim);font-size:12px}
+.bank-designation-preview{margin-top:8px;padding:9px 10px;border:1px solid #d8c98f;border-radius:8px;background:#fff8e5;color:#55451d;font-size:12px;line-height:1.45}
+.bank-designation-actions{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+.bank-designation-actions button{width:auto;margin:0;padding:7px 10px}

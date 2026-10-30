@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v55.0";
+const APP_VERSION = "v55.1";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -271,7 +271,7 @@ function ensureStarterBankEntries() {
     ["Dance", "cardio"], ["Cycle", "cardio"], ["Yoga", "mobility"],
     ["Meditation", "mindful-recovery"], ["Aquafit", "cardio"],
     ["Mindful Cooldown", "mindful-recovery"], ["Core", "core"],
-    ["Pilates (Reformer)", "pilates"], ["Pilates (Mat)", "pilates"],
+    ["Pilates (Reformer)", "pilates"], ["Pilates (Mat)", "pilates"], ["Marathon Training", "cardio"],
   ];
   starterEntries.forEach(([name,dayDesignation]) => {
     const key = bankKey(name);
@@ -288,7 +288,10 @@ function ensureStarterBankEntries() {
     const inferred = inferBankDesignation(entry.name || key, entry);
     if (inferred) { entry.dayDesignation = inferred; changed = true; }
   });
-  if (changed) saveBank(bank);
+  Object.values(logs || {}).forEach(day => {
+    if (day?.plan?.levelup === "lu-marathon") { day.plan.levelup = "lu-bank:marathon training"; day.plan.levelupName = "Marathon Training"; changed = true; }
+  });
+  if (changed) { saveBank(bank); saveLogs(logs); }
 }
 function bankKey(name) {
   return name.trim().toLowerCase();
@@ -732,7 +735,7 @@ function weekPrimaryOptions() {
     ["fullbody", "Full Body"], ["core", dayDesignationLabel("core")], ["mob", dayDesignationLabel("mobility")],
     ["pilates", dayDesignationLabel("pilates")], ["swim", "Swim"], ["ellip", "Elliptical"],
     ["cardio", dayDesignationLabel("cardio")], ["walk", "Walking"], ["treadmill", "Treadmill"],
-    ["run", "Marathon run"], ["rest", dayDesignationLabel("rest")],
+    ["run", `Marathon run (${dayDesignationLabel(marathonDesignationId())})`], ["rest", dayDesignationLabel("rest")],
   ];
   const included = new Set(options.map(([value]) => value));
   dayDesignations.forEach(day => {
@@ -747,7 +750,9 @@ const PLAN_TO_TRACKER_DAY = {
   rest:"rest", cardio:"cardio", swim:"cardio", ellip:"cardio", "cardio-class":"cardio",
   walk:"cardio", treadmill:"cardio", run:"cardio", fullbody:"upper",
 };
+function marathonDesignationId() { return bank[bankKey("Marathon Training")]?.dayDesignation || "cardio"; }
 function trackerDayForPlanPrimary(primary) {
+  if (primary === "run") return marathonDesignationId();
   return PLAN_TO_TRACKER_DAY[primary] || (DAYS.some(day => day.id === primary) ? primary : null);
 }
 function planOptionsHTML(options, selected, includeExerciseBank = false, savedBankLabel = "") {
@@ -816,10 +821,11 @@ function weeklyBalance(start) {
       if (id === "mobility" || id === "mob") categories.add("mobility");
       if (id === "pilates") { categories.add("core"); categories.add("mobility"); }
     };
-    addDesignation(primary === "lu-core" ? "core" : primary === "lu-mob" ? "mobility" : primary === "lu-pilates" ? "pilates" : primary);
+    addDesignation(primary === "lu-core" ? "core" : primary === "lu-mob" ? "mobility" : primary === "lu-pilates" ? "pilates" : primary === "run" ? marathonDesignationId() : primary);
     if (levelup === "lu-core") addDesignation("core");
     else if (levelup === "lu-mob") addDesignation("mobility");
     else if (levelup === "lu-pilates") addDesignation("pilates");
+    else if (levelup === "lu-marathon") addDesignation(marathonDesignationId());
     else if (levelup.startsWith("lu-bank:")) addDesignation(bank[levelup.slice(8)]?.dayDesignation);
     categories.forEach(key => counts[key]++);
   }
@@ -900,11 +906,13 @@ function overviewQuote(iso) {
 function atAGlanceDayLabel(label) { return /day$/i.test(label) ? label : label + " Day"; }
 function overviewDayLabel(date) {
   const day = logs[date] || {};
-  const plannedId = {upper:"upper",lower:"lower",core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
+  const plannedId = day.plan?.primary === "run" ? marathonDesignationId() : {upper:"upper",lower:"lower",core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
   const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
-  const extra = day.plan?.levelup ? `Level Up: ${planOptionLabel(day.plan.levelup, day.plan)}` : "";
+  const levelupKey = day.plan?.levelup?.startsWith("lu-bank:") ? day.plan.levelup.slice(8) : "";
+  const levelupDesignation = levelupKey ? bank[levelupKey]?.dayDesignation : day.plan?.levelup === "lu-marathon" ? marathonDesignationId() : "";
+  const extra = day.plan?.levelup ? `Level Up: ${planOptionLabel(day.plan.levelup, day.plan)}${levelupDesignation ? ` (${dayDesignationLabel(levelupDesignation)})` : ""}` : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
 }
 function overviewCardioIcon(name) {
@@ -1149,7 +1157,7 @@ function selectedDayInfo() {
   const savedType = dayLog?.dayId;
   const legacyPilatesPlan = savedType === "cardio" && dayLog?.plan?.primary === "pilates" && !dayLogHasRealData(dayLog,state.selectedDate);
   const plannedType = trackerDayForPlanPrimary(dayLog?.plan?.primary);
-  const id = legacyPilatesPlan ? "pilates" : (savedType || plannedType || state.selectedDayId);
+  const id = legacyPilatesPlan ? "pilates" : (dayLog?.plan?.primary === "run" ? (plannedType || savedType || state.selectedDayId) : (savedType || plannedType || state.selectedDayId));
   return DAYS.find((d) => d.id === id) || null;
 }
 
@@ -1768,8 +1776,9 @@ function renderHistory() {
   const exMap = allExercises();
   dates.forEach((date) => {
     const dayLog = logs[date] || { entries: {} };
-    const dayInfo = DAYS.find((d) => d.id === dayLog.dayId);
     const runLine = runHistoryLine(date);
+    const historicalDayId = dayLog.plan?.primary === "run" || runLine ? marathonDesignationId() : dayLog.dayId;
+    const dayInfo = DAYS.find((d) => d.id === historicalDayId);
     const dayLabels = [dayInfo ? dayInfo.label : "", runLine ? "Run" : ""].filter(Boolean).join(" + ");
     const card = el(`
       <div class="hist-card">
@@ -1783,6 +1792,8 @@ function renderHistory() {
     Object.entries(dayLog.entries || {}).forEach(([exId, entry]) => {
       const ex = exMap[exId];
       if (!ex || !entryHasData(entry)) return;
+      const designation = bank[bankKey(ex.name)]?.dayDesignation;
+      const designationTag = designation ? ` <span class="hist-ex-designation">${safeText(dayDesignationLabel(designation))}</span>` : "";
       const unit = exUnitLabel(ex);
       const setStr = entry.sets.map((s, i) => {
         if (s.reps == null) return "–";
@@ -1792,7 +1803,7 @@ function renderHistory() {
       const totalStr = isZoneTracked(ex)
         ? ` (Total: ${entry.sets.reduce((sum, s) => sum + (s.reps || 0), 0)} min)`
         : "";
-      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b> ${setStr}${totalStr}</div>`));
+      card.appendChild(el(`<div class="hist-line"><b>${ex.name}:</b>${designationTag} ${setStr}${totalStr}</div>`));
     });
     // Show only classes actually associated with a saved workout session.
     // A class existing in the library alone never counts as completed.
@@ -2390,7 +2401,7 @@ function openBankManagerModal(onClose) {
         <button class="btn-secondary" id="bank-import-btn" style="flex:1">⬆ Restore Backup</button>
       </div>
       <input type="file" id="bank-import-file" accept="application/json" style="display:none" />
-      <section class="bank-day-designations"><h4>Day designations</h4><p class="field-hint">Rename a day or add a new one. These names are editable.</p><div id="day-designation-list"></div><div class="form-row"><input id="new-day-designation" placeholder="New day name" /><button type="button" class="btn-secondary" id="add-day-designation">Add day</button></div></section><div id="bank-manager-list"></div>
+      <section class="bank-day-designations"><h4>Day designations</h4><p class="field-hint">These choices apply to every exercise. Rename a day or add one such as Commute Day; changes also update how past plans and History are labeled.</p><div class="form-row"><input id="new-day-designation" placeholder="Add a day name, e.g. Commute Day" /><button type="button" class="btn-primary" id="add-day-designation">Add day</button></div><div id="day-designation-list"></div></section><div id="bank-manager-list"></div>
       <div class="modal-actions">
         <button class="btn-primary" id="bank-manager-close-btn" style="flex:1">Done</button>
       </div>
@@ -2425,7 +2436,7 @@ function openBankManagerModal(onClose) {
         <div class="bank-row">
           <div>
             <div class="bank-row-name">${entry.name}</div>
-            <div class="bank-row-meta">${TRACK_TYPES[entry.trackType]?.label || entry.trackType}</div><label class="bank-day-label">Day designation<select class="bank-day-designation">${dayDesignations.map(d=>`<option value="${safeText(d.id)}"${entry.dayDesignation===d.id?" selected":""}>${safeText(d.label)}</option>`).join("")}</select></label>
+            <div class="bank-row-meta">${TRACK_TYPES[entry.trackType]?.label || entry.trackType}</div><label class="bank-day-label">Day designation<select class="bank-day-designation"><option value=""${entry.dayDesignation?"":" selected"}>Unassigned</option>${dayDesignations.map(d=>`<option value="${safeText(d.id)}"${entry.dayDesignation===d.id?" selected":""}>${safeText(d.label)}</option>`).join("")}</select></label>
           </div>
           <button class="bank-row-delete-btn" title="Remove from bank">✕</button>
         </div>
@@ -2440,8 +2451,6 @@ function openBankManagerModal(onClose) {
       list.appendChild(row);
     });
   }
-  renderList();
-
   renderDesignations();
   renderList();
   modal.querySelector("#bank-export-btn").onclick = () => {

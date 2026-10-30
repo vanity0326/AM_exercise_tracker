@@ -1117,3 +1117,4 @@ select {
 .plan-page .log-week-day-status{display:block;min-height:16px;margin-top:2px;color:var(--text-dim);font-size:10px;font-weight:750}
 .plan-from-log{display:block;width:auto;margin:12px auto 0;padding:10px 16px}
 @media(min-width:900px){.plan-page .log-week-days{grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}.plan-page .log-week-day{padding:12px}}
+.hist-ex-designation { display:inline-block; margin:0 4px; padding:1px 6px; border-radius:999px; background:#e8f0e9; color:#315d49; font-size:.78em; }

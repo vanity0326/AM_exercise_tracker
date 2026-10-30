@@ -122,6 +122,7 @@ function renderDayClassSection(date){
  const exerciseNames=new Map(), finisherIds=new Set(); if(day&&day.loggable){getExerciseList(date,day.id).forEach(x=>exerciseNames.set(x.id,x.name));getExerciseList(date,finisherKey(day.id)).forEach(x=>{exerciseNames.set(x.id,x.name);finisherIds.add(x.id)});}
  Object.entries(logs[date]?.entries||{}).forEach(([id])=>{const ex=allExercises()[id];if(ex)exerciseNames.set(id,ex.name)});
  Object.entries(existing).forEach(([id,s])=>{if(id!==MARATHON_RUN_CLASS_ID&&!exerciseNames.has(id))exerciseNames.set(id,s.exerciseName||id)});
+ const plannedLevelUp=logs[date]?.plan?.levelup||""; if(plannedLevelUp.startsWith("lu-bank:")){const key=plannedLevelUp.slice(8); const plannedExercise=bank[key]; if(plannedExercise?.name){const plannedId="levelup_"+key;exerciseNames.set(plannedId,plannedExercise.name);}}
  const items=box.querySelector('.cl-day-items');
  exerciseNames.forEach((name,id)=>{const cur=existing[id];const selected=classFor(cur?.classId);const context=finisherIds.has(id)?' · Cardio Finisher':'';const label=selected?classLabel(selected):'Assign class';const b=el(`<button class="btn-secondary cl-session-btn"></button>`);b.textContent=`${name}${context}: ${label}`;b.onclick=()=>editClassSession(date,id,name);items.appendChild(b)});
  if(!exerciseNames.size)items.innerHTML='<p class="field-hint">Add an exercise first, or use History to attach a class to an older workout.</p>';

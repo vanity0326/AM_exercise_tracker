@@ -30,12 +30,14 @@ export default async (req) => {
         headers: { "Content-Type": "application/json" },
       });
     }
+    const previous = await store.get(KEY, { type: "json" });
     const toSave = {
       library: body.library || {},
       logs: body.logs || {},
       bank: body.bank || {},
       classes: body.classes || [],
-      marathon: body.marathon || null,
+      marathon: body.marathon || previous?.marathon || null,
+      dayDesignations: Array.isArray(body.dayDesignations) ? body.dayDesignations : (previous?.dayDesignations || []),
       updatedAt: new Date().toISOString(),
     };
     await store.setJSON(KEY, toSave);

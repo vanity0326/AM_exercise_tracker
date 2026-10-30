@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v54.2";
+const APP_VERSION = "v54.3";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -651,15 +651,45 @@ const PLAN_TO_TRACKER_DAY = {
   rest:"rest", cardio:"cardio", swim:"cardio", ellip:"cardio", "cardio-class":"cardio",
   walk:"cardio", treadmill:"cardio", run:"cardio", fullbody:"upper",
 };
-function planOptionsHTML(options, selected) {
+function planOptionsHTML(options, selected, includeExerciseBank = false, savedBankLabel = "") {
   const shown = selected === "cardio-class" ? "cardio" : selected;
-  return options.map(([value,label]) => `<option value="${value}"${value === shown ? " selected" : ""}>${label}</option>`).join("");
+  let html = options.map(([value,label]) => `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(label)}</option>`).join("");
+  if (!includeExerciseBank) return html;
+  const bankEntries = Object.entries(bank)
+    .filter(([key, entry]) => key && entry?.name)
+    .sort((a,b) => a[1].name.localeCompare(b[1].name));
+  const selectedBankKey = shown.startsWith("lu-bank:") ? shown.slice("lu-bank:".length) : "";
+  html += `<optgroup label="Exercise bank">${bankEntries.map(([key,entry]) => {
+    const value = `lu-bank:${key}`;
+    return `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(entry.name)}</option>`;
+  }).join("")}`;
+  if (selectedBankKey && !bank[selectedBankKey] && savedBankLabel) {
+    const value = `lu-bank:${selectedBankKey}`;
+    html += `<option value="${safeText(value)}" selected>${safeText(savedBankLabel)} (no longer in bank)</option>`;
+  }
+  html += `</optgroup>`;
+  return html;
+}
+function planOptionLabel(value, plan = null) {
+  if (value?.startsWith("lu-bank:")) {
+    const key = value.slice("lu-bank:".length);
+    return bank[key]?.name || (plan?.levelup === value ? plan.levelupName : "") || "Banked exercise";
+  }
+  return PLAN_LABELS[value] || value || "";
 }
 function planForDate(date) { return logs[date]?.plan || {}; }
 function saveInlinePlan(date, slot, value) {
   const dayLog = logs[date] || { entries:{} };
   logs[date] = dayLog;
   dayLog.plan = { ...(dayLog.plan || {}), [slot]:value, isCommute:false };
+  if (slot === "levelup") {
+    if (value.startsWith("lu-bank:")) {
+      const key = value.slice("lu-bank:".length);
+      dayLog.plan.levelupName = bank[key]?.name || dayLog.plan.levelupName || "Banked exercise";
+    } else {
+      delete dayLog.plan.levelupName;
+    }
+  }
   if (dayLog.plan.primary === "cardio-class") dayLog.plan.primary = "cardio";
   const mapped = PLAN_TO_TRACKER_DAY[dayLog.plan.primary];
   if (!dayLogHasRealData(dayLog, date)) {
@@ -704,7 +734,7 @@ function renderWeeklyPlan() {
   const start = mondayOfIso(state.selectedDate);
   const end = addDaysIso(start,6);
   const range = `${fmtDate(start)} – ${fmtDate(end)}, ${isoToParts(end).year}`;
-  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary and Level Up for each dated activity. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower target 1 · Core/Mobility/Rest minimum 1</span></div><div class="log-week-counts"></div></div></section>`);
+  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary and Level Up for each dated activity. Level Up can use a preset or an exercise from your bank. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower target 1 · Core/Mobility/Rest minimum 1</span></div><div class="log-week-counts"></div></div></section>`);
   panel.querySelector("h2").textContent = range;
   const days = panel.querySelector(".log-week-days");
   WEEKDAY_LABELS.forEach((label,i) => {
@@ -718,7 +748,7 @@ function renderWeeklyPlan() {
     card.querySelector(".log-week-open").onclick = () => { state.selectedDate = date; state.selectedDayId = null; state.tab = "today"; render(); window.scrollTo({top:0,behavior:"smooth"}); };
     const primary = card.querySelector(".log-plan-primary"), levelup = card.querySelector(".log-plan-levelup");
     primary.innerHTML = planOptionsHTML(WEEK_PRIMARY_OPTIONS, plan.primary || "");
-    levelup.innerHTML = planOptionsHTML(WEEK_LEVELUP_OPTIONS, plan.levelup || "");
+    levelup.innerHTML = planOptionsHTML(WEEK_LEVELUP_OPTIONS, plan.levelup || "", true, plan.levelupName || "");
     primary.onchange = () => saveInlinePlan(date,"primary",primary.value);
     levelup.onchange = () => saveInlinePlan(date,"levelup",levelup.value);
     days.appendChild(card);
@@ -760,7 +790,7 @@ function overviewDayLabel(date) {
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || null;
   const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = names[id] || (day.plan?.primary ? PLAN_LABELS[day.plan.primary] || day.plan.primary : null);
-  const extra = day.plan?.levelup ? `Level Up: ${PLAN_LABELS[day.plan.levelup] || day.plan.levelup}` : "";
+  const extra = day.plan?.levelup ? `Level Up: ${planOptionLabel(day.plan.levelup, day.plan)}` : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
 }
 function overviewCardioIcon(name) {
@@ -1148,7 +1178,7 @@ function renderPlanNote(date) {
   else {
     const parts = [];
     if (plan.primary) parts.push(PLAN_LABELS[plan.primary] || plan.primary);
-    if (plan.levelup) parts.push(`Level Up: ${PLAN_LABELS[plan.levelup] || plan.levelup}`);
+    if (plan.levelup) parts.push(`Level Up: ${planOptionLabel(plan.levelup, plan)}`);
     if (!parts.length) return null;
     text = parts.join(", ");
   }

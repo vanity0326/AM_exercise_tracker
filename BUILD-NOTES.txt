@@ -14,3 +14,5 @@ v54: Split weekly planning into its own Plan tab and keep Log focused on complet
 v54.1: Removed the daily guide's minute-based progress bar and minute count. The guide now reports the number of prescribed exercises checked and clearly identifies when all exercises for that day are checked. Existing saved completion data and minute fields are preserved for the weekly review and history.
 
 v54.2: Added Marathon training to the selectable Level Up options. It is stored with the existing per-date plan and appears as a planned Level Up in At a Glance. The Run tab remains the place to manage and view the dated training schedule. Existing saved plan selections and workout records are unchanged.
+
+v54.3: Level Up now includes the current exercise bank as selectable options alongside the preset choices. Banked exercise names display in At a Glance and in the Log plan note. Selected names remain readable if the bank entry is later removed. This uses existing per-date plan storage and does not add a separate finisher area or change completed workout records.

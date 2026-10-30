@@ -1,15 +1,16 @@
-Toni's Total Training Tracker v53 draft - integrated weekly planning
+Toni's Total Training Tracker build notes
 
 Weekly Primary and Level Up selections now live in the Log tab and save into the existing iron-log-logs per-date records. At a Glance remains read-only and displays the saved Primary and Level Up plan.
 Pilates Reformer is a dedicated selectable/loggable day type. Planning it once contributes one Core and one Mobility component to the weekly balance, without creating two activity entries. Standalone Core and Mobility remain selectable.
-The separate Sunday Planner navigation and page are excluded from this draft package. Existing saved logs, plan records, library, bank, classes, marathon settings, sync endpoints, and storage keys are retained.
+The separate Sunday Planner navigation and page are no longer included. Existing saved logs, plan records, library, bank, classes, marathon settings, sync endpoints, and storage keys are retained.
 
-This ZIP is a local draft. It has not been deployed.
 Assumption: no Pilates Reformer exercise routine was supplied, so the new day type starts with an empty date-specific list. Add Reformer movements with the existing Add Exercise control. Weekly totals are planned component counts, not completion counts.
 Responsive layout update: desktop now uses a wide workspace with all seven plan days visible; tablet and phone layouts wrap plan days, tabs, and day-type buttons so those controls do not require horizontal scrolling. Mobile zoom is not restricted.
-Displayed draft version and offline cache were bumped to v53.1 for this responsive update.
+Displayed version and offline cache were bumped to v53.1 for this responsive update.
 v53.2: the single Activity date control now drives both the day log and the displayed Monday-to-Sunday planner week. The separate planner week navigation was removed. Planned balance cards show counts against each category target; Upper and Lower target exactly one, while Core, Mobility, and Rest require at least one. These are planned counts, not completion counts.
 v53.3: consolidated the Primary choices to one Cardio option. Instructor-led sessions continue to use the existing Classes controls and class records. Existing cardio-class plan values display as Cardio and are normalized when that date is next edited.
 
 v54: Split weekly planning into its own Plan tab and keep Log focused on completing exercise entries. Both tabs use the same Activity date control, so the planner week follows the selected logging date without a second week selector. Plan day cards show planned/completed status and open the matching date in Log. Log follows the planned Primary where possible and links back to Plan when no loggable Primary is selected. History remains based on completed data and does not show plan-only dates. At a Glance remains read-only and continues reflecting the shared plan and completed records. Existing per-date logs, libraries, class records, run data, sync configuration, and storage keys are retained.
 v54.1: Removed the daily guide's minute-based progress bar and minute count. The guide now reports the number of prescribed exercises checked and clearly identifies when all exercises for that day are checked. Existing saved completion data and minute fields are preserved for the weekly review and history.
+
+v54.2: Added Marathon training to the selectable Level Up options. It is stored with the existing per-date plan and appears as a planned Level Up in At a Glance. The Run tab remains the place to manage and view the dated training schedule. Existing saved plan selections and workout records are unchanged.

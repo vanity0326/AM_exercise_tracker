@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v54.1 draft";
+const APP_VERSION = "v54.2";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -643,7 +643,7 @@ const WEEK_LEVELUP_OPTIONS = [
   ["", "— Choose Level Up —"], ["lu-swim", "Swim"], ["lu-ellip", "Elliptical"],
   ["lu-dance", "Dance"], ["lu-yoga", "Yoga"], ["lu-meditation", "Meditation"],
   ["lu-pilates", "Pilates Reformer"], ["lu-walk", "Walking"], ["lu-treadmill", "Treadmill"],
-  ["lu-aquafit", "Aquafit"], ["lu-cooldown", "Mindful Cooldown"],
+  ["lu-aquafit", "Aquafit"], ["lu-marathon", "Marathon training"], ["lu-cooldown", "Mindful Cooldown"],
   ["lu-core", "Core"], ["lu-mob", "Mobility"], ["lu-rest", "Rest"],
 ];
 const PLAN_TO_TRACKER_DAY = {
@@ -1123,7 +1123,7 @@ const PLAN_LABELS = {
   core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio", walk: "Walking",
   treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
-  "lu-pilates": "Pilates Reformer", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit",
+  "lu-pilates": "Pilates Reformer", "lu-walk": "Walking", "lu-treadmill": "Treadmill", "lu-aquafit": "Aquafit", "lu-marathon": "Marathon training",
   "lu-cooldown": "Mindful Cooldown", "lu-rest": "Just rest!", "lu-core": "Core Toning", "lu-mob": "Mobility",
   "walk-lunch": "Walk at lunch",
 };

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v54.3";
+const APP_VERSION = "v54.4";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -639,13 +639,7 @@ const WEEK_PRIMARY_OPTIONS = [
   ["cardio", "Cardio"], ["walk", "Walking"],
   ["treadmill", "Treadmill"], ["run", "Marathon run"], ["rest", "Rest"],
 ];
-const WEEK_LEVELUP_OPTIONS = [
-  ["", "— Choose Level Up —"], ["lu-swim", "Swim"], ["lu-ellip", "Elliptical"],
-  ["lu-dance", "Dance"], ["lu-yoga", "Yoga"], ["lu-meditation", "Meditation"],
-  ["lu-pilates", "Pilates Reformer"], ["lu-walk", "Walking"], ["lu-treadmill", "Treadmill"],
-  ["lu-aquafit", "Aquafit"], ["lu-marathon", "Marathon training"], ["lu-cooldown", "Mindful Cooldown"],
-  ["lu-core", "Core"], ["lu-mob", "Mobility"], ["lu-rest", "Rest"],
-];
+const WEEK_LEVELUP_OPTIONS = [["", "— Choose from Exercise Bank —"]];
 const PLAN_TO_TRACKER_DAY = {
   upper:"upper", lower:"lower", core:"core", mob:"mobility", pilates:"pilates",
   rest:"rest", cardio:"cardio", swim:"cardio", ellip:"cardio", "cardio-class":"cardio",
@@ -659,11 +653,17 @@ function planOptionsHTML(options, selected, includeExerciseBank = false, savedBa
     .filter(([key, entry]) => key && entry?.name)
     .sort((a,b) => a[1].name.localeCompare(b[1].name));
   const selectedBankKey = shown.startsWith("lu-bank:") ? shown.slice("lu-bank:".length) : "";
+  const selectedBankEntryExists = !!(selectedBankKey && bank[selectedBankKey]?.name);
+  const selectedIsPreset = options.some(([value]) => value === shown);
+  if (shown && !selectedBankEntryExists && !selectedIsPreset) {
+    const legacyLabel = PLAN_LABELS[shown] || savedBankLabel || "Previous Level Up";
+    html += `<option value="${safeText(shown)}" selected disabled>Previously planned: ${safeText(legacyLabel)}</option>`;
+  }
   html += `<optgroup label="Exercise bank">${bankEntries.map(([key,entry]) => {
     const value = `lu-bank:${key}`;
     return `<option value="${safeText(value)}"${value === shown ? " selected" : ""}>${safeText(entry.name)}</option>`;
   }).join("")}`;
-  if (selectedBankKey && !bank[selectedBankKey] && savedBankLabel) {
+  if (selectedBankKey && !selectedBankEntryExists && savedBankLabel) {
     const value = `lu-bank:${selectedBankKey}`;
     html += `<option value="${safeText(value)}" selected>${safeText(savedBankLabel)} (no longer in bank)</option>`;
   }
@@ -734,7 +734,7 @@ function renderWeeklyPlan() {
   const start = mondayOfIso(state.selectedDate);
   const end = addDaysIso(start,6);
   const range = `${fmtDate(start)} – ${fmtDate(end)}, ${isoToParts(end).year}`;
-  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary and Level Up for each dated activity. Level Up can use a preset or an exercise from your bank. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower target 1 · Core/Mobility/Rest minimum 1</span></div><div class="log-week-counts"></div></div></section>`);
+  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary for each dated activity and select Level Up from the exercise bank. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower target 1 · Core/Mobility/Rest minimum 1</span></div><div class="log-week-counts"></div></div></section>`);
   panel.querySelector("h2").textContent = range;
   const days = panel.querySelector(".log-week-days");
   WEEKDAY_LABELS.forEach((label,i) => {

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v56";
+const APP_VERSION = "v57";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -961,15 +961,39 @@ function overviewCardioIcon(name) {
   if (/pilates|yoga/.test(value)) return "🧘";
   return "♥";
 }
-function overviewPT(date) {
-  const dt = new Date(date + "T12:00:00");
-  const weekday = (dt.getDay() + 6) % 7;
-  if (weekday % 2 === 0) return { title:"Towel exercise day", minutes:"9 MIN", items:[["Towel toe curls and uncurls","3 min × 3 rounds","Curl and uncurl the towel with your toes for the full 3 minutes each round."]] };
-  return { title:"Stretch + balance day", minutes:"6 MIN", items:[
-    ["Straight-knee calf stretch","30 sec × 3 (1.5 min)","Gentle stretch only; do not force the ankle forward or push into heel pain."],
-    ["Bent-knee calf stretch","30 sec × 3 (1.5 min)","Gentle stretch; avoid deep ankle movement or pain at the heel attachment."],
-    ["Single-leg balance · firm floor","1 min × 3 (3 min)","Stand near a sturdy counter and use support as needed. No balance board."]
-  ]};
+function overviewPTState() {
+  try { return JSON.parse(localStorage.getItem("achilles-rehab-log-v1") || "{}"); }
+  catch { return {}; }
+}
+function overviewPTNextDay(data = overviewPTState()) {
+  const value = Number(data.nextRotationDay);
+  return Number.isInteger(value) && value >= 1 && value <= 3 ? value : 1;
+}
+function overviewPT(date, completedOnly = false) {
+  const data = overviewPTState(), entry = data[date] || {};
+  const completed = entry.ptCompleted === true || (entry.ptCompleted == null && (entry.completed || []).length > 0);
+  if (completedOnly && !completed) return { title:"No PT session marked complete", minutes:"", items:[] };
+  let day = Number(entry.ptRotationDay);
+  if (!(day >= 1 && day <= 3)) {
+    if (entry.planned === "Towel exercise day") day = 2;
+    else if (entry.planned === "Stretch + balance day") day = 1;
+    else day = overviewPTNextDay(data);
+  }
+  const routines = {
+    1:{title:"Day 1 — Existing PT routine",minutes:"6 MIN",items:[
+      ["Straight-knee calf stretch","30 sec × 3 (1.5 min)","Gentle stretch only; do not force the ankle forward or push into heel pain."],
+      ["Bent-knee calf stretch","30 sec × 3 (1.5 min)","Gentle stretch; avoid deep ankle movement or pain at the heel attachment."],
+      ["Single-leg balance · firm floor","1 min × 3 (3 min)","Stand near a sturdy counter and use support as needed. No balance board."]
+    ]},
+    2:{title:"Day 2 — Towel Day",minutes:"9 MIN",items:[["Towel toe curls and uncurls","3 min × 3 rounds","Curl and uncurl the towel with your toes for the full 3 minutes each round."]] },
+    3:{title:"Day 3 — Feet Flex & Stretch",minutes:"",items:[
+      ["Feet flex & stretch (up/down)","15 reps × 3 sets","Move the feet up and down through a comfortable range."],
+      ["Feet side-to-side","15 reps × 3 sets","Move the feet side to side through a comfortable range."],
+      ["Ankle circles","15 reps × 3 sets","Make smooth circles with each ankle."]
+    ]}
+  };
+  const routine = routines[day] || routines[1];
+  return completed ? {...routine,title:"Completed · " + routine.title} : {...routine,title:"Next PT session · " + routine.title};
 }
 function overviewActivitiesFor(date) {
   const dayLog = logs[date] || {};
@@ -1129,6 +1153,10 @@ function renderWeekOverview() {
   print.onclick = () => window.print();
   controls.append(previous, choose, next, print);
   wrap.appendChild(top);
+  const ptNote = el(`<p class="overview-muted"></p>`);
+  const nextPTNames = {1:"Day 1 — Existing PT routine",2:"Day 2 — Towel Day",3:"Day 3 — Feet Flex & Stretch"};
+  ptNote.textContent = "PT rotation: next is " + nextPTNames[overviewPTNextDay()] + ". It advances only when a session is marked complete; rest days do not advance it.";
+  wrap.appendChild(ptNote);
 
   const days = el(`<div class="week-overview-days"></div>`);
   for (let i = 0; i < 7; i++) {
@@ -1158,10 +1186,10 @@ function renderWeekOverview() {
       });
     }
 
-    const pt = overviewPT(date);
+    const pt = overviewPT(date, true);
     const ptHolder = day.querySelector(".week-overview-pt");
     const ptHead = el(`<div class="week-overview-pt-title"></div>`);
-    ptHead.textContent = `ACHILLES PT · ${pt.title} · ${pt.minutes}`;
+    ptHead.textContent = `ACHILLES PT · ${pt.title}${pt.minutes ? " · " + pt.minutes : ""}`;
     ptHolder.appendChild(ptHead);
     pt.items.forEach(([name, dose]) => {
       const item = el(`<div class="week-overview-pt-item"><strong></strong><span></span></div>`);

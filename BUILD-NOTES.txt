@@ -28,3 +28,10 @@ v56: Renamed existing class entries titled Walk/Run to Stride. Class IDs and all
 
 
 v57: Achilles Rehab now uses a consecutive three-session PT rotation. Day 1 keeps the existing calf-stretch and floor-balance routine; Day 2 is the existing towel day with toe curls; Day 3 adds feet flex up/down, side-to-side, and ankle circles at 15 reps x 3 sets each. The next day is saved locally and advances only after the explicit Mark PT session complete action. Exercise checkboxes record what was actually completed. Saving day notes or taking rest days does not advance the rotation. Existing rehab entries and other tracker data are retained.
+v58 fixes:
+- Shared sync now merges missing dates from a device cache instead of replacing the entire remote history with a partial snapshot.
+- Empty Upper/Lower routine arrays no longer erase routines already saved in shared storage. The Log tab already follows the planned day type; restored Upper/Lower routines now appear there once recovered data is loaded.
+- Added restore.html with recovered workout history and exercise routines through November 1, 2026. After deploying this package, open /restore.html on the site and select Restore recovered data. Existing later planned dates are kept; existing same-date server records take precedence.
+- Preserved the v57 consecutive three-day PT rotation.
+
+Known limit: app data is stored in one shared snapshot. v58 protects dates missing from a partial snapshot, but conflicting edits to the same date on two devices are still last-write-wins.

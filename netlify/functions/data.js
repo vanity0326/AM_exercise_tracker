@@ -31,11 +31,24 @@ export default async (req) => {
       });
     }
     const previous = await store.get(KEY, { type: "json" });
+    const previousLibrary = previous?.library || {};
+    const incomingLibrary = body.library || {};
+    const library = { ...previousLibrary, ...incomingLibrary };
+    // Do not let an empty/stale browser snapshot erase shared routines.
+    for (const [key, list] of Object.entries(previousLibrary)) {
+      if (Array.isArray(list) && list.length && Array.isArray(incomingLibrary[key]) && incomingLibrary[key].length === 0) {
+        library[key] = list;
+      }
+    }
     const toSave = {
-      library: body.library || {},
-      logs: body.logs || {},
-      bank: body.bank || {},
-      classes: body.classes || [],
+      library,
+      // Merge by date so a device with a partial cache cannot wipe other days
+      // from shared storage. Newer edits for a date still replace that date.
+      logs: { ...(previous?.logs || {}), ...(body.logs || {}) },
+      bank: { ...(previous?.bank || {}), ...(body.bank || {}) },
+      classes: Array.isArray(body.classes) && body.classes.length
+        ? body.classes
+        : (previous?.classes || body.classes || []),
       marathon: body.marathon || previous?.marathon || null,
       dayDesignations: Array.isArray(body.dayDesignations) ? body.dayDesignations : (previous?.dayDesignations || []),
       updatedAt: new Date().toISOString(),

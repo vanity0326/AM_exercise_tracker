@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v57";
+const APP_VERSION = "v58";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -373,15 +373,29 @@ async function pullRemote(isInitial) {
         return;
       }
       const localClassesBeforePull = Array.isArray(classes) ? classes : [];
+      const localLibraryBeforePull = library || {};
+      const localLogsBeforePull = logs || {};
       const remoteHasDayDesignations = Array.isArray(remote.dayDesignations);
       const repairRemoteDayDesignations = !remoteHasDayDesignations;
       const remoteHasClasses = Array.isArray(remote.classes);
       const remoteClasses = remoteHasClasses ? remote.classes : [];
       let repairRemoteClasses = !remoteHasClasses;
+      let repairRemoteWorkoutData = false;
       let relabeledClassTitles = false;
       suppressPush = true;
       library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
-      logs = remote.logs || {};
+      // An empty or partial snapshot from one device must not erase routines
+      // and dates already stored on another device. Merge by date, preferring
+      // the remote copy for dates it actually contains.
+      for (const [listKey, localList] of Object.entries(localLibraryBeforePull)) {
+        const remoteList = library[listKey];
+        if (Array.isArray(localList) && localList.length && (!Array.isArray(remoteList) || !remoteList.length)) {
+          library[listKey] = localList;
+          repairRemoteWorkoutData = true;
+        }
+      }
+      logs = { ...(localLogsBeforePull || {}), ...(remote.logs || {}) };
+      if (Object.keys(logs).length > Object.keys(remote.logs || {}).length) repairRemoteWorkoutData = true;
       bank = remote.bank || {};
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
@@ -410,7 +424,7 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       ensureStarterBankEntries();
-      if (repairRemoteClasses || repairRemoteDayDesignations || relabeledClassTitles) {
+      if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles) {
         touchLocalUpdatedAt();
         schedulePush();
       } else {

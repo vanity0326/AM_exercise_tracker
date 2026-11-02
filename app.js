@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v64";
+const APP_VERSION = "v65";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -255,6 +255,24 @@ function clearBankDayAssignmentsForV62() {
   saveBank(bank);
   return true;
 }
+// Version 65 removes the existing bank contents once, after local and remote
+// snapshots have been merged. The pending marker retries the clear until an
+// empty bank has successfully synced. Starter entries are not reseeded.
+const LS_V65_BANK_RESET = "iron-log-v65-exercise-bank-cleared";
+function clearExerciseBankForV65(remote = {}) {
+  // The server marker makes the reset global: other devices must not repeat it
+  // after someone has begun rebuilding the bank.
+  if (Number(remote?.bankResetVersion) >= 65) {
+    localStorage.setItem(LS_V65_BANK_RESET, "done");
+    return false;
+  }
+  if (localStorage.getItem(LS_V65_BANK_RESET) === "done") return false;
+  bank = {};
+  localStorage.setItem(LS_BANK, "{}");
+  localStorage.setItem(LS_V65_BANK_RESET, "pending");
+  touchLocalUpdatedAt();
+  return true;
+}
 function canonicalDayDesignationId(dayId) {
   if (!dayId) return "";
   const base = dayId.replace(/_finisher$/, "");
@@ -275,12 +293,6 @@ function inferBankDesignation(name, entry = {}) {
   Object.values(logs || {}).forEach(day => Object.entries(day.lists || {}).forEach(([listKey,list]) => inspectList(listKey,list)));
   return matches.size === 1 ? [...matches][0] : "";
 }
-const STARTER_BANK_ENTRIES = [
-  ["Dance", ""], ["Cycle", ""], ["Yoga", ""],
-  ["Meditation", ""], ["Aquafit", ""],
-  ["Mindful Cooldown", ""], ["Core", ""],
-  ["Pilates (Reformer)", ""], ["Pilates (Mat)", ""], ["Marathon Training", ""],
-];
 function hasMeaningfulLocalData() {
   if (Object.values(library || {}).some(list => Array.isArray(list) && list.length)) return true;
   if (Object.keys(logs || {}).length || (classes || []).length) return true;
@@ -289,34 +301,7 @@ function hasMeaningfulLocalData() {
     const original = DEFAULT_DAY_DESIGNATIONS.find(item => item.id === day.id);
     return !original || day.label !== original.label || day.loggable !== original.loggable;
   })) return true;
-  const defaults = new Map(STARTER_BANK_ENTRIES.map(([name,dayDesignation]) => [bankKey(name), {name,dayDesignation}]));
-  const keys = Object.keys(bank || {});
-  if (keys.some(key => !defaults.has(key))) return true;
-  const starterKeys = keys.filter(key => defaults.has(key));
-  if (starterKeys.length && starterKeys.length < defaults.size) return true;
-  return starterKeys.some(key => {
-    const entry = bank[key], original = defaults.get(key);
-    return entry.name !== original.name || entry.type !== "other" || entry.trackType !== "duration"
-      || JSON.stringify(entry.weights || []) !== JSON.stringify([DEFAULT_TARGET_MINUTES])
-      || JSON.stringify(entry.targets || []) !== JSON.stringify([DEFAULT_TARGET_MINUTES])
-      || !!entry.customUnit || entry.dayDesignation !== original.dayDesignation;
-  });
-}
-function ensureStarterBankEntries() {
-  let changed = false;
-  STARTER_BANK_ENTRIES.forEach(([name,dayDesignation]) => {
-    const key = bankKey(name);
-    if (!bank[key]) {
-      bank[key] = { name, type:"other", trackType:"duration", weights:[DEFAULT_TARGET_MINUTES], targets:[DEFAULT_TARGET_MINUTES], customUnit:null, dayDesignation };
-      changed = true;
-    } else if (!bank[key].dayDesignation) {
-      bank[key].dayDesignation = dayDesignation;
-      changed = true;
-    }
-  });
-  // Keep saved plan identity and historical labels intact. Legacy Marathon
-  // Program selections resolve through the Marathon Training bank item at render time.
-  if (changed) saveBank(bank);
+  return Object.keys(bank || {}).length > 0;
 }
 function bankKey(name) {
   return name.trim().toLowerCase();
@@ -373,11 +358,15 @@ async function pullRemote(isInitial) {
         const merged = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
         localClasses.forEach(c => { if (c && c.id) merged.set(c.id, c); });
         classes = [...merged.values()];
-        bank = { ...(remote.bank || {}), ...(bank || {}) };
+        const remoteBankWasReset = Number(remote.bankResetVersion) >= 65;
+        const localResetMarker = localStorage.getItem(LS_V65_BANK_RESET);
+        bank = remoteBankWasReset && !localResetMarker
+          ? { ...(remote.bank || {}) }
+          : { ...(remote.bank || {}), ...(bank || {}) };
         localStorage.setItem(LS_BANK, JSON.stringify(bank));
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
-        clearBankDayAssignmentsForV62();
+        clearExerciseBankForV65(remote);
         setSyncStatus("syncing");
         pushRemote();
         return;
@@ -407,7 +396,11 @@ async function pullRemote(isInitial) {
       }
       logs = { ...(localLogsBeforePull || {}), ...(remote.logs || {}) };
       if (Object.keys(logs).length > Object.keys(remote.logs || {}).length) repairRemoteWorkoutData = true;
-      bank = { ...localBankBeforePull, ...(remote.bank || {}) };
+      const remoteBankWasReset = Number(remote.bankResetVersion) >= 65;
+      const localResetMarker = localStorage.getItem(LS_V65_BANK_RESET);
+      bank = remoteBankWasReset && !localResetMarker
+        ? { ...(remote.bank || {}) }
+        : { ...localBankBeforePull, ...(remote.bank || {}) };
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
@@ -434,9 +427,8 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
-      ensureStarterBankEntries();
-      const resetAssignments = clearBankDayAssignmentsForV62();
-      if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles || resetAssignments) {
+      const resetBank = clearExerciseBankForV65(remote);
+      if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles || resetBank) {
         touchLocalUpdatedAt();
         schedulePush();
       } else {
@@ -446,8 +438,7 @@ async function pullRemote(isInitial) {
     } else if (isInitial || !Object.keys(bank).length) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
-      ensureStarterBankEntries();
-      clearBankDayAssignmentsForV62();
+      clearExerciseBankForV65(null);
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
@@ -474,10 +465,12 @@ function pushRemote() {
       const res = await fetch(REMOTE_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library, logs, bank, marathon, classes, dayDesignations }),
+        body: JSON.stringify({ library, logs, bank, marathon, classes, dayDesignations,
+          bankResetVersion: localStorage.getItem(LS_V65_BANK_RESET) ? 65 : 0 }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
       if (localStorage.getItem(LS_V62_BANK_RESET) === "pending") localStorage.setItem(LS_V62_BANK_RESET, "done");
+      if (localStorage.getItem(LS_V65_BANK_RESET) === "pending") localStorage.setItem(LS_V65_BANK_RESET, "done");
       setSyncStatus("synced");
       return true;
     } catch (e) {

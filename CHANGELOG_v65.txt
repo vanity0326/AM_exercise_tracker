@@ -1,0 +1,9 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 65
+
+- Clear the complete Exercise Bank once during upgrade, after local and shared data are merged. Keep the bank empty instead of reseeding starter exercises so the user can rebuild it.
+- Store the reset version with shared data so another device does not repeat the reset after exercises have been re-added. Ignore stale bank snapshots from older app versions after the shared reset is recorded.
+- Version 65 bank saves replace the shared bank snapshot, so bank deletions persist. Existing date-based Logs, completed History, strength routines, and saved classes are retained.
+- Preserve the Version 64 activity deduplication and per-date Remove class assignment behavior.
+- Update the displayed app version, asset references, deployment label, and offline cache to v65.
+
+Verification: JavaScript syntax checks passed for app.js, class-library.js, marathon.js, sw.js, and netlify/functions/data.js. Static bank-reset checks passed. No package test/build scripts are defined. Browser behavior, cross-device sync, and deployment were not exercised.

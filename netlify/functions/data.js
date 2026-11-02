@@ -40,12 +40,23 @@ export default async (req) => {
         library[key] = list;
       }
     }
+    const previousBankResetVersion = Number(previous?.bankResetVersion || 0);
+    const incomingBankResetVersion = Number(body.bankResetVersion || 0);
+    const bankResetVersion = Math.max(previousBankResetVersion, incomingBankResetVersion);
+    // Version 65 submits the rebuilt bank as the authoritative replacement.
+    // Thereafter, older clients cannot repopulate the deleted bank snapshot.
+    const bank = incomingBankResetVersion >= 65
+      ? { ...(body.bank || {}) }
+      : (previousBankResetVersion >= 65
+        ? (previous?.bank || {})
+        : { ...(previous?.bank || {}), ...(body.bank || {}) });
     const toSave = {
       library,
       // Merge by date so a device with a partial cache cannot wipe other days
       // from shared storage. Newer edits for a date still replace that date.
       logs: { ...(previous?.logs || {}), ...(body.logs || {}) },
-      bank: { ...(previous?.bank || {}), ...(body.bank || {}) },
+      bank,
+      bankResetVersion,
       classes: Array.isArray(body.classes) && body.classes.length
         ? body.classes
         : (previous?.classes || body.classes || []),

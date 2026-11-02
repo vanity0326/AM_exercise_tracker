@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v62";
+const APP_VERSION = "v63";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -2766,12 +2766,7 @@ function openAddExerciseModal(explicitListKey) {
       <div class="form-row">
         <label>Exercise Bank Day assignment (optional)</label>
         <select id="ex-bank-day"><option value="">Unassigned</option></select>
-        <div class="field-hint">Planning uses this assignment to match exercises to a day. You can still choose any bank exercise for any Log day or finisher.</div>
-      </div>
-      <div class="form-row" id="ex-day-row" ${explicitListKey ? 'style="display:none"' : ""}>
-        <label>Add to today's Log under</label>
-        <select id="ex-day"></select>
-        <div class="field-hint">This places the exercise in today's Log. It is separate from the optional bank assignment above.</div>
+        <div class="field-hint">Planning uses this assignment to populate matching days automatically. Leave it Unassigned while sorting the bank; any bank exercise can still be added from the active Log or finisher.</div>
       </div>
       <div class="form-row">
         <label>How is this tracked?</label>
@@ -2817,13 +2812,9 @@ function openAddExerciseModal(explicitListKey) {
       </div>
     </div>
   `);
-  const daySelect = modal.querySelector("#ex-day");
   const bankDaySelect = modal.querySelector("#ex-bank-day");
   const preferredDay = selectedDayInfo();
-  const defaultDayId = preferredDay && preferredDay.loggable ? preferredDay.id : exerciseDays()[0].id;
-  exerciseDays().forEach((d) => {
-    daySelect.appendChild(el(`<option value="${d.id}" ${d.id === defaultDayId ? "selected" : ""}>${d.label}</option>`));
-  });
+  const defaultDayId = preferredDay && preferredDay.loggable ? preferredDay.id : exerciseDays()[0]?.id;
   function refreshBankDayOptions(selected = "") {
     bankDaySelect.innerHTML = `<option value="">Unassigned</option>` + dayDesignations.map(d => `<option value="${safeText(d.id)}">${safeText(d.label)}</option>`).join("");
     bankDaySelect.value = selected || "";
@@ -2938,7 +2929,9 @@ function openAddExerciseModal(explicitListKey) {
   modal.querySelector("#save-btn").onclick = () => {
     const name = nameInput.value.trim();
     if (!name) { nameInput.focus(); return; }
-    const dayId = explicitListKey || modal.querySelector("#ex-day").value;
+    const selectedDay = selectedDayInfo();
+    const dayId = explicitListKey || (selectedDay && selectedDay.loggable ? selectedDay.id : "");
+    if (!dayId) { alert("Choose a Primary activity in Planning before adding an exercise to the Log."); return; }
     const trackType = trackSelect.value;
     const type = typeSelect.value;
     const numSets = Math.max(1, Number(numSetsInput.value) || 1);

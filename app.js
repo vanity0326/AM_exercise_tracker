@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v60";
+const APP_VERSION = "v61";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -246,11 +246,12 @@ function saveBank(bank) {
   touchLocalUpdatedAt();
   schedulePush();
 }
-const LS_V60_BANK_RESET = "iron-log-v60-bank-assignments-cleared";
-function clearBankDayAssignmentsForV60() {
-  if (localStorage.getItem(LS_V60_BANK_RESET) === "1") return false;
+// Clear the prior bank assignments once for every browser upgrading to v61.
+const LS_V61_BANK_RESET = "iron-log-v61-bank-day-assignments-cleared";
+function clearBankDayAssignmentsForV61() {
+  if (localStorage.getItem(LS_V61_BANK_RESET) === "done") return false;
   Object.values(bank || {}).forEach(entry => { if (entry) entry.dayDesignation = ""; });
-  localStorage.setItem(LS_V60_BANK_RESET, "1");
+  localStorage.setItem(LS_V61_BANK_RESET, "pending");
   saveBank(bank);
   return true;
 }
@@ -370,14 +371,17 @@ async function pullRemote(isInitial) {
         const merged = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
         localClasses.forEach(c => { if (c && c.id) merged.set(c.id, c); });
         classes = [...merged.values()];
+        bank = { ...(remote.bank || {}), ...(bank || {}) };
+        localStorage.setItem(LS_BANK, JSON.stringify(bank));
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
-        clearBankDayAssignmentsForV60();
+        clearBankDayAssignmentsForV61();
         setSyncStatus("syncing");
         pushRemote();
         return;
       }
       const localClassesBeforePull = Array.isArray(classes) ? classes : [];
+      const localBankBeforePull = bank || {};
       const localLibraryBeforePull = library || {};
       const localLogsBeforePull = logs || {};
       const remoteHasDayDesignations = Array.isArray(remote.dayDesignations);
@@ -401,7 +405,7 @@ async function pullRemote(isInitial) {
       }
       logs = { ...(localLogsBeforePull || {}), ...(remote.logs || {}) };
       if (Object.keys(logs).length > Object.keys(remote.logs || {}).length) repairRemoteWorkoutData = true;
-      bank = remote.bank || {};
+      bank = { ...localBankBeforePull, ...(remote.bank || {}) };
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
@@ -429,7 +433,7 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       ensureStarterBankEntries();
-      const resetAssignments = clearBankDayAssignmentsForV60();
+      const resetAssignments = clearBankDayAssignmentsForV61();
       if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles || resetAssignments) {
         touchLocalUpdatedAt();
         schedulePush();
@@ -441,7 +445,7 @@ async function pullRemote(isInitial) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
       ensureStarterBankEntries();
-      clearBankDayAssignmentsForV60();
+      clearBankDayAssignmentsForV61();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
@@ -471,6 +475,7 @@ function pushRemote() {
         body: JSON.stringify({ library, logs, bank, marathon, classes, dayDesignations }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
+      if (localStorage.getItem(LS_V61_BANK_RESET) === "pending") localStorage.setItem(LS_V61_BANK_RESET, "done");
       setSyncStatus("synced");
       return true;
     } catch (e) {
@@ -808,7 +813,7 @@ function marathonDesignationId() { return bank[bankKey("Marathon Training")]?.da
 function trackerDayForPlanPrimary(primary) {
   if (primary?.startsWith("bank-primary:")) {
     const item = bank[primary.slice("bank-primary:".length)];
-    return item?.dayDesignation && DAYS.some(day => day.id === item.dayDesignation) ? item.dayDesignation : "cardio";
+    return item?.dayDesignation && DAYS.some(day => day.id === item.dayDesignation) ? item.dayDesignation : null;
   }
   const designation = dayDesignations.find(day => day.primaryValue === primary);
   if (designation) return designation.id;
@@ -886,7 +891,7 @@ function preserveCompletedExerciseDetails(date) {
 }
 function populatePlannedExercises(date, primary) {
   const dayLog = logs[date] ||= { entries:{} };
-  const dayId = trackerDayForPlanPrimary(primary);
+  const dayId = trackerDayForPlanPrimary(primary) || (primary?.startsWith("bank-primary:") ? dayLog.plan?.primaryDayId || "cardio" : null);
   preserveCompletedExerciseDetails(date);
   if (!dayId || dayId === "rest") return;
   let assigned;
@@ -903,6 +908,39 @@ function populatePlannedExercises(date, primary) {
   dayLog.lists[dayId] = assigned;
   if (!dayLogHasRealData(dayLog,date)) dayLog.dayId = dayId;
 }
+function syncPlannedLevelUpActivity(date) {
+  const dayLog = logs[date];
+  const plan = dayLog?.plan;
+  if (!dayLog || !plan) return;
+  const bankKeyValue = plan.levelup?.startsWith("lu-bank:") ? plan.levelup.slice(8) : "";
+  const targetDayId = trackerDayForPlanPrimary(plan.primary) || plan.primaryDayId || dayLog.dayId || "cardio";
+  const targetListKey = finisherKey(targetDayId);
+  const oldId = plan.levelupExerciseId;
+  const oldListKey = plan.levelupExerciseListKey;
+  if (bankKeyValue && bank[bankKeyValue] && plan.levelupExerciseKey === bankKeyValue && oldListKey === targetListKey && oldId) {
+    const oldList = getExerciseList(date, oldListKey);
+    if (oldList.some(ex => ex.id === oldId)) return;
+    if (entryHasData(dayLog.entries?.[oldId])) return;
+  }
+  if (oldId && oldListKey) {
+    preserveCompletedExerciseDetails(date);
+    if (!entryHasData(dayLog.entries?.[oldId])) {
+      setExerciseList(date, oldListKey, getExerciseList(date, oldListKey).filter(ex => ex.id !== oldId));
+    }
+    delete plan.levelupExerciseId;
+    delete plan.levelupExerciseKey;
+    delete plan.levelupExerciseListKey;
+  }
+  if (!bankKeyValue || !bank[bankKeyValue]) return;
+  const exercise = bankExerciseForPlan(bankKeyValue);
+  if (!exercise) return;
+  const id = `levelup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
+  exercise.id = id;
+  setExerciseList(date, targetListKey, [...getExerciseList(date, targetListKey), exercise]);
+  plan.levelupExerciseId = id;
+  plan.levelupExerciseKey = bankKeyValue;
+  plan.levelupExerciseListKey = targetListKey;
+}
 function saveInlinePlan(date, slot, value) {
   const dayLog = logs[date] || { entries:{} };
   logs[date] = dayLog;
@@ -910,7 +948,7 @@ function saveInlinePlan(date, slot, value) {
   if (slot === "primary") {
     if (value.startsWith("bank-primary:")) {
       dayLog.plan.primaryName = bank[value.slice("bank-primary:".length)]?.name || dayLog.plan.primaryName || "Bank exercise";
-      dayLog.plan.primaryDayId = trackerDayForPlanPrimary(value);
+      dayLog.plan.primaryDayId = trackerDayForPlanPrimary(value) || "cardio";
     } else {
       delete dayLog.plan.primaryName;
       delete dayLog.plan.primaryDayId;
@@ -927,6 +965,7 @@ function saveInlinePlan(date, slot, value) {
   if (dayLog.plan.primary === "cardio-class") dayLog.plan.primary = "cardio";
   const mapped = trackerDayForPlanPrimary(dayLog.plan.primary);
   if (slot === "primary" && value) populatePlannedExercises(date, value);
+  if (slot === "primary" || slot === "levelup") syncPlannedLevelUpActivity(date);
   if (!dayLogHasRealData(dayLog, date)) {
     if (mapped) { dayLog.dayId = mapped; dayLog.plan.setDayType = true; }
     else if (dayLog.plan.setDayType) { delete dayLog.dayId; dayLog.plan.setDayType = false; }
@@ -1340,6 +1379,7 @@ function setDayType(dayId) {
 }
 
 function renderToday() {
+  syncPlannedLevelUpActivity(state.selectedDate);
   const wrap = document.createElement("div");
   wrap.appendChild(renderActivityDateBar());
   const current = selectedDayInfo();
@@ -1375,7 +1415,7 @@ function renderToday() {
   if (dayExercises.length === 0) {
     wrap.appendChild(el(`
       <div class="empty-state">
-        No exercises added for ${current.label} yet. Tap the + button to add one.
+        No exercises are assigned to ${current.label} yet. Assign exercises in Exercise Bank to have Planning add them here, or add one directly below.
       </div>
     `));
     wrap.appendChild(renderFinisherSection(current.id, todayLog));
@@ -1471,7 +1511,7 @@ function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
   const finisherExercises = getExerciseList(state.selectedDate, fKey);
 
   if (finisherExercises.length > 0) {
-    wrap.appendChild(el(`<div class="finisher-heading">🏃 Cardio Finisher</div>`));
+    wrap.appendChild(el(`<div class="finisher-heading">🏃 Additional Activities / Finishers</div>`));
     const tabCursor = sharedTabCursor || makeTabCursor();
     const plan = buildRenderPlan(finisherExercises);
     plan.forEach((item) => {
@@ -1487,7 +1527,7 @@ function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
     });
   }
 
-  const addBtn = el(`<button class="finisher-add-btn">🏃 + Add Cardio Finisher Exercise</button>`);
+  const addBtn = el(`<button class="finisher-add-btn">🏃 + Add Activity / Finisher</button>`);
   addBtn.onclick = () => openAddExerciseModal(fKey);
   wrap.appendChild(addBtn);
 
@@ -1772,8 +1812,10 @@ function clearSingleDay(date) {
   if (!ok) return;
   // Keep the weekly plan for this date; only the logged data goes.
   const plan = logs[date].plan;
+  const lists = logs[date].lists;
+  const planListKeys = logs[date].planListKeys;
   delete logs[date];
-  if (plan) logs[date] = { dayId: dayLog.dayId, entries: {}, plan };
+  if (plan) logs[date] = { dayId: dayLog.dayId, entries: {}, plan, ...(lists ? {lists} : {}), ...(planListKeys ? {planListKeys} : {}) };
   saveLogs(logs);
   render();
 }
@@ -1801,6 +1843,14 @@ function removeExerciseFromDay(dayId, exId) {
   const ok = confirm(message);
   if (!ok) return;
 
+  preserveCompletedExerciseDetails(date);
+  if (logs[date]?.plan?.levelupExerciseId === exId) {
+    logs[date].plan.levelup = "";
+    delete logs[date].plan.levelupName;
+    delete logs[date].plan.levelupExerciseId;
+    delete logs[date].plan.levelupExerciseKey;
+    delete logs[date].plan.levelupExerciseListKey;
+  }
   const updated = getExerciseList(date, dayId).filter((e) => e.id !== exId);
   // A "circuit" of one doesn't mean anything — auto-ungroup any group left with a single member.
   if (ex && ex.groupId) {
@@ -2698,7 +2748,7 @@ function openAddExerciseModal(explicitListKey) {
   const bankEntries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
   const modal = el(`
     <div class="modal">
-      <h3>${explicitListKey ? "Add Cardio Finisher Exercise" : "Add Exercise"}</h3>
+      <h3>${explicitListKey ? "Add Activity / Finisher" : "Add Exercise"}</h3>
       <div class="form-row">
         <label>From your bank</label>
         <select id="ex-bank">

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FBF3D9">
+  <meta name="description" content="TONI'S TOTAL TRANSFORMATION TRACKER: a personal daily health and activity tracker.">
+  <title>TONI'S TOTAL TRANSFORMATION TRACKER</title>
+  <link rel="icon" href="./icons/tracker.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="TONI'S TOTAL TRANSFORMATION TRACKER">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">TONI'S TOTAL TRANSFORMATION TRACKER</p>
+        <h1>Today, one step at a time.</h1>
+        <p class="subhead">A simple place to log, notice patterns, and adjust your plan.</p>
+      </div>
+      <div class="header-meta">
+        <span id="saveStatus" class="save-status">Loading tracker…</span>
+        <span class="version-pill">Version 58</span>
+        <span id="logPoints" class="points-pill">0 log points</span>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tracker sections">
+      <button type="button" class="tab active" data-view="today">Today</button>
+      <button type="button" class="tab" data-view="review">Review</button>
+      <button type="button" class="tab" data-view="weight">Weight</button>
+      <button type="button" class="tab" data-view="measurements">Measures</button>
+      <button type="button" class="tab" data-view="more">More</button>
+    </nav>
+    <main id="view-content" tabindex="-1"></main>
+    <footer class="app-footer">
+      <span id="syncFooter">Opening your tracker…</span>
+      <a class="text-button" href="./achilles.html">Achilles PT</a>
+      <button type="button" class="text-button" data-view="more">Backup and settings</button>
+    </footer>
+  </div>
+  <script src="./seed-history.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
+
+

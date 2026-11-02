@@ -1,0 +1,19 @@
+{
+  "name": "TONI'S TOTAL TRANSFORMATION TRACKER",
+  "short_name": "Toni's Tracker",
+  "description": "Daily health logging, weekly review, and personal transformation tracking.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FBF3D9",
+  "theme_color": "#FBF3D9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./icons/tracker.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v61";
+const APP_VERSION = "v62";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -246,12 +246,12 @@ function saveBank(bank) {
   touchLocalUpdatedAt();
   schedulePush();
 }
-// Clear the prior bank assignments once for every browser upgrading to v61.
-const LS_V61_BANK_RESET = "iron-log-v61-bank-day-assignments-cleared";
-function clearBankDayAssignmentsForV61() {
-  if (localStorage.getItem(LS_V61_BANK_RESET) === "done") return false;
+// Clear the prior bank assignments once for every browser upgrading to v62.
+const LS_V62_BANK_RESET = "iron-log-v62-bank-day-assignments-cleared";
+function clearBankDayAssignmentsForV62() {
+  if (localStorage.getItem(LS_V62_BANK_RESET) === "done") return false;
   Object.values(bank || {}).forEach(entry => { if (entry) entry.dayDesignation = ""; });
-  localStorage.setItem(LS_V61_BANK_RESET, "pending");
+  localStorage.setItem(LS_V62_BANK_RESET, "pending");
   saveBank(bank);
   return true;
 }
@@ -332,7 +332,9 @@ function upsertBank(ex) {
     weights: ex.weights ? [...ex.weights] : [20, 20, 20],
     targets: Array.isArray(ex.targets) ? [...ex.targets] : null,
     customUnit: ex.customUnit || null,
-    dayDesignation: ex.dayDesignation || bank[key]?.dayDesignation || "",
+    dayDesignation: Object.prototype.hasOwnProperty.call(ex, "dayDesignation")
+      ? (ex.dayDesignation || "")
+      : (bank[key]?.dayDesignation || ""),
   };
   saveBank(bank);
 }
@@ -375,7 +377,7 @@ async function pullRemote(isInitial) {
         localStorage.setItem(LS_BANK, JSON.stringify(bank));
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
-        clearBankDayAssignmentsForV61();
+        clearBankDayAssignmentsForV62();
         setSyncStatus("syncing");
         pushRemote();
         return;
@@ -433,7 +435,7 @@ async function pullRemote(isInitial) {
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
       ensureStarterBankEntries();
-      const resetAssignments = clearBankDayAssignmentsForV61();
+      const resetAssignments = clearBankDayAssignmentsForV62();
       if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles || resetAssignments) {
         touchLocalUpdatedAt();
         schedulePush();
@@ -445,7 +447,7 @@ async function pullRemote(isInitial) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
       ensureStarterBankEntries();
-      clearBankDayAssignmentsForV61();
+      clearBankDayAssignmentsForV62();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
@@ -475,7 +477,7 @@ function pushRemote() {
         body: JSON.stringify({ library, logs, bank, marathon, classes, dayDesignations }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
-      if (localStorage.getItem(LS_V61_BANK_RESET) === "pending") localStorage.setItem(LS_V61_BANK_RESET, "done");
+      if (localStorage.getItem(LS_V62_BANK_RESET) === "pending") localStorage.setItem(LS_V62_BANK_RESET, "done");
       setSyncStatus("synced");
       return true;
     } catch (e) {
@@ -2608,7 +2610,7 @@ function openBankManagerModal(onClose) {
         <button class="btn-secondary" id="bank-import-btn" style="flex:1">⬆ Restore Backup</button>
       </div>
       <input type="file" id="bank-import-file" accept="application/json" style="display:none" />
-      <section class="bank-day-designations"><h4>Day designations</h4><p class="field-hint">These choices apply to every exercise. Rename a day or add one such as Commute Day; changes also update how past plans and History are labeled.</p><div class="form-row"><input id="new-day-designation" placeholder="Add a day name, e.g. Commute Day" /><button type="button" class="btn-primary" id="add-day-designation">Add day</button></div><div id="day-designation-list"></div></section><div id="bank-manager-list"></div>
+      <section class="bank-day-designations"><h4>Day assignments</h4><p class="field-hint">Assign exercises to a day for Planning to add them automatically. Leave an exercise Unassigned while you sort the bank; it stays available for direct Log and finisher selection. You can rename or add days at any time.</p><div class="form-row"><input id="new-day-designation" placeholder="Add a day name, e.g. Commute Day" /><button type="button" class="btn-primary" id="add-day-designation">Add day</button></div><div id="day-designation-list"></div></section><div id="bank-manager-list"></div>
       <div class="modal-actions">
         <button class="btn-primary" id="bank-manager-close-btn" style="flex:1">Done</button>
       </div>
@@ -2761,9 +2763,15 @@ function openAddExerciseModal(explicitListKey) {
         <label>Exercise name</label>
         <input type="text" id="ex-name" placeholder="e.g. Cable Woodchop" />
       </div>
+      <div class="form-row">
+        <label>Exercise Bank Day assignment (optional)</label>
+        <select id="ex-bank-day"><option value="">Unassigned</option></select>
+        <div class="field-hint">Planning uses this assignment to match exercises to a day. You can still choose any bank exercise for any Log day or finisher.</div>
+      </div>
       <div class="form-row" id="ex-day-row" ${explicitListKey ? 'style="display:none"' : ""}>
-        <label>Day</label>
+        <label>Add to today's Log under</label>
         <select id="ex-day"></select>
+        <div class="field-hint">This places the exercise in today's Log. It is separate from the optional bank assignment above.</div>
       </div>
       <div class="form-row">
         <label>How is this tracked?</label>
@@ -2810,11 +2818,17 @@ function openAddExerciseModal(explicitListKey) {
     </div>
   `);
   const daySelect = modal.querySelector("#ex-day");
+  const bankDaySelect = modal.querySelector("#ex-bank-day");
   const preferredDay = selectedDayInfo();
   const defaultDayId = preferredDay && preferredDay.loggable ? preferredDay.id : exerciseDays()[0].id;
   exerciseDays().forEach((d) => {
     daySelect.appendChild(el(`<option value="${d.id}" ${d.id === defaultDayId ? "selected" : ""}>${d.label}</option>`));
   });
+  function refreshBankDayOptions(selected = "") {
+    bankDaySelect.innerHTML = `<option value="">Unassigned</option>` + dayDesignations.map(d => `<option value="${safeText(d.id)}">${safeText(d.label)}</option>`).join("");
+    bankDaySelect.value = selected || "";
+  }
+  refreshBankDayOptions();
   const typeSelect = modal.querySelector("#ex-type");
   if (defaultDayId === "upper") typeSelect.value = "upper";
   else if (defaultDayId === "lower") typeSelect.value = "lower";
@@ -2839,8 +2853,12 @@ function openAddExerciseModal(explicitListKey) {
     bankSelect.innerHTML = `<option value="">+ New exercise</option>` +
       entries.map((b) => `<option value="${bankKey(b.name)}">${b.name}</option>`).join("");
     bankSelect.value = entries.some((b) => bankKey(b.name) === current) ? current : "";
+    refreshBankDayOptions(bank[bankSelect.value]?.dayDesignation || "");
   }
-  modal.querySelector("#manage-bank-btn").onclick = () => openBankManagerModal(refreshBankOptions);
+  modal.querySelector("#manage-bank-btn").onclick = () => openBankManagerModal(() => {
+    refreshBankOptions();
+    refreshBankDayOptions(bank[bankSelect.value]?.dayDesignation || "");
+  });
 
   function updateZoneTotal() {
     if (trackSelect.value !== "hr_zones") {
@@ -2900,9 +2918,10 @@ function openAddExerciseModal(explicitListKey) {
 
   bankSelect.onchange = () => {
     const key = bankSelect.value;
-    if (!key) return; // "+ New exercise" — leave fields as-is for a fresh entry
+    if (!key) { refreshBankDayOptions(); return; } // "+ New exercise" — fresh entries start unassigned
     const entry = bank[key];
     if (!entry) return;
+    refreshBankDayOptions(entry.dayDesignation || "");
     nameInput.value = entry.name;
     typeSelect.value = entry.type;
     trackSelect.value = entry.trackType || "weight";
@@ -2935,7 +2954,7 @@ function openAddExerciseModal(explicitListKey) {
     const date = state.selectedDate;
     setExerciseList(date, dayId, [...getExerciseList(date, dayId), newEx]);
     const priorBankEntry = bank[bankKey(name)];
-    upsertBank({ ...newEx, dayDesignation: priorBankEntry?.dayDesignation || "" });
+    upsertBank({ ...newEx, dayDesignation: bankDaySelect.value || "" });
 
     if (!explicitListKey) state.selectedDayId = dayId;
     document.body.removeChild(overlay);

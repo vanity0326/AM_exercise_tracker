@@ -35,3 +35,5 @@ v58 fixes:
 - Preserved the v57 consecutive three-day PT rotation.
 
 Known limit: app data is stored in one shared snapshot. v58 protects dates missing from a partial snapshot, but conflicting edits to the same date on two devices are still last-write-wins.
+
+v60: Cleared all existing Exercise Bank Day assignments once when the upgraded app loads, and starter bank entries begin unassigned. Day assignments remain saved in the bank until changed or cleared. Choosing a day type in Planning copies the currently assigned bank exercises into that date's Log list. Planning also offers every bank exercise as a direct Primary activity, independent of its Day assignment. The Log uses date-specific planned lists so changing the current plan does not rewrite another date's list. Before replacing a plan list, completed exercise definitions and their assignment labels are snapshotted with that date's completion data; History continues to show the original date, exercise details, measurements, and workout day. The same bank picker is available for direct logging and finishers; multiple finishers remain individually removable. Version and offline cache updated to v60.

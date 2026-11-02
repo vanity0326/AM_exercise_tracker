@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v63";
+const APP_VERSION = "v64";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -915,25 +915,46 @@ function syncPlannedLevelUpActivity(date) {
   const plan = dayLog?.plan;
   if (!dayLog || !plan) return;
   const bankKeyValue = plan.levelup?.startsWith("lu-bank:") ? plan.levelup.slice(8) : "";
-  const targetDayId = trackerDayForPlanPrimary(plan.primary) || plan.primaryDayId || dayLog.dayId || "cardio";
-  const targetListKey = finisherKey(targetDayId);
   const oldId = plan.levelupExerciseId;
   const oldListKey = plan.levelupExerciseListKey;
-  if (bankKeyValue && bank[bankKeyValue] && plan.levelupExerciseKey === bankKeyValue && oldListKey === targetListKey && oldId) {
-    const oldList = getExerciseList(date, oldListKey);
-    if (oldList.some(ex => ex.id === oldId)) return;
-    if (entryHasData(dayLog.entries?.[oldId])) return;
-  }
-  if (oldId && oldListKey) {
+  const samePlannedExercise = !!(bankKeyValue && bank[bankKeyValue] && plan.levelupExerciseKey === bankKeyValue);
+  if (oldId && oldListKey && !samePlannedExercise) {
     preserveCompletedExerciseDetails(date);
-    if (!entryHasData(dayLog.entries?.[oldId])) {
+    const oldIsOwned = plan.levelupExerciseOwned === true || (plan.levelupExerciseOwned == null && oldId.startsWith("levelup_") && oldListKey.endsWith("_finisher"));
+    if (oldIsOwned && !entryHasData(dayLog.entries?.[oldId])) {
       setExerciseList(date, oldListKey, getExerciseList(date, oldListKey).filter(ex => ex.id !== oldId));
     }
     delete plan.levelupExerciseId;
     delete plan.levelupExerciseKey;
     delete plan.levelupExerciseListKey;
+    delete plan.levelupExerciseOwned;
   }
   if (!bankKeyValue || !bank[bankKeyValue]) return;
+  if (oldId && samePlannedExercise && oldListKey && getExerciseList(date, oldListKey).some(ex => ex.id === oldId)) return;
+  if (oldId && samePlannedExercise && entryHasData(dayLog.entries?.[oldId])) return;
+
+  const primaryDayId = trackerDayForPlanPrimary(plan.primary) || plan.primaryDayId || dayLog.dayId || "cardio";
+  const targetListKey = finisherKey(primaryDayId);
+  // Only reuse activities already present in this date's log. Static routines
+  // are templates, not evidence that the exercise is already logged today.
+  const keys = new Set(Object.keys(dayLog.lists || {}));
+  const candidates = [];
+  keys.forEach(listKey => getExerciseList(date, listKey).forEach(ex => {
+    if (bankKey(ex.name || "") === bankKeyValue) candidates.push({ listKey, ex });
+  }));
+  const primaryListKey = primaryDayId;
+  const candidate = candidates.sort((a,b) => {
+    const score = item => item.ex.id === oldId ? 0 : item.listKey === primaryListKey ? 1 : item.listKey === targetListKey ? 2 : 3;
+    return score(a) - score(b);
+  })[0];
+  if (candidate) {
+    plan.levelupExerciseId = candidate.ex.id;
+    plan.levelupExerciseKey = bankKeyValue;
+    plan.levelupExerciseListKey = candidate.listKey;
+    plan.levelupExerciseOwned = false;
+    return;
+  }
+
   const exercise = bankExerciseForPlan(bankKeyValue);
   if (!exercise) return;
   const id = `levelup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
@@ -942,6 +963,7 @@ function syncPlannedLevelUpActivity(date) {
   plan.levelupExerciseId = id;
   plan.levelupExerciseKey = bankKeyValue;
   plan.levelupExerciseListKey = targetListKey;
+  plan.levelupExerciseOwned = true;
 }
 function saveInlinePlan(date, slot, value) {
   const dayLog = logs[date] || { entries:{} };
@@ -1149,17 +1171,20 @@ function overviewActivitiesFor(date) {
     : [];
   const plannedActivities = [...cardioExercises, ...finishers];
   const activities = [];
-  const addActivity = (name, cls, detail = "") => activities.push({ name, className:cls ? classLabel(cls) : "", detail });
-  const seen = new Set();
-  plannedActivities.forEach(activity => {
-    if (seen.has(activity.id)) return;
-    seen.add(activity.id);
-    addActivity(activity.name, activity.cls);
-  });
-  cardioSessions.filter(session => !seen.has(session.id)).forEach(session => {
-    seen.add(session.id);
-    addActivity(session.name, session.cls);
-  });
+  const activityByName = new Map();
+  const addActivity = (name, cls, detail = "") => {
+    const key = bankKey(name || "");
+    if (key && activityByName.has(key)) {
+      const existing = activities[activityByName.get(key)];
+      if (!existing.className && cls) existing.className = classLabel(cls);
+      if (!existing.detail && detail) existing.detail = detail;
+      return;
+    }
+    if (key) activityByName.set(key, activities.length);
+    activities.push({ name, className:cls ? classLabel(cls) : "", detail });
+  };
+  plannedActivities.forEach(activity => addActivity(activity.name, activity.cls));
+  cardioSessions.forEach(session => addActivity(session.name, session.cls));
   if (run?.workout) {
     addActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), [run.workout.title, run.workout.detail].filter(Boolean).join(" · "));
   } else if (!activities.length && dayLog.plan?.primary) {
@@ -1457,7 +1482,7 @@ function renderToday() {
   }
   wrap.appendChild(actionRow);
 
-  wrap.appendChild(renderFinisherSection(current.id, todayLog, tabCursor));
+  wrap.appendChild(renderFinisherSection(current.id, todayLog, tabCursor, new Set(dayExercises.map(ex => bankKey(ex.name || "")))));
 
   return wrap;
 }
@@ -1507,10 +1532,10 @@ function renderPlanNote(date) {
 // above it — using a fresh cursor here would hand out duplicate tabindex
 // values, and the browser resolves duplicates by jumping to whichever one
 // comes first in the DOM (i.e. back up to the primary list).
-function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
+function renderFinisherSection(dayId, todayLog, sharedTabCursor, excludedNames = new Set()) {
   const wrap = document.createElement("div");
   const fKey = finisherKey(dayId);
-  const finisherExercises = getExerciseList(state.selectedDate, fKey);
+  const finisherExercises = getExerciseList(state.selectedDate, fKey).filter(ex => !excludedNames.has(bankKey(ex.name || "")));
 
   if (finisherExercises.length > 0) {
     wrap.appendChild(el(`<div class="finisher-heading">🏃 Additional Activities / Finishers</div>`));
@@ -1541,8 +1566,12 @@ function renderFinisherSection(dayId, todayLog, sharedTabCursor) {
 function buildRenderPlan(dayExercises) {
   const plan = [];
   const seen = new Set();
+  const seenNames = new Set();
   dayExercises.forEach((ex) => {
     if (seen.has(ex.id)) return;
+    const normalizedName = bankKey(ex.name || "");
+    if (normalizedName && seenNames.has(normalizedName)) return;
+    if (normalizedName) seenNames.add(normalizedName);
     if (ex.groupId) {
       const members = dayExercises.filter((e) => e.groupId === ex.groupId);
       members.forEach((m) => seen.add(m.id));
@@ -2945,9 +2974,15 @@ function openAddExerciseModal(explicitListKey) {
 
     const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit };
     const date = state.selectedDate;
-    setExerciseList(date, dayId, [...getExerciseList(date, dayId), newEx]);
-    const priorBankEntry = bank[bankKey(name)];
     upsertBank({ ...newEx, dayDesignation: bankDaySelect.value || "" });
+    const alreadyOnDate = Object.values(logs[date]?.lists || {}).flat().some(ex => bankKey(ex.name || "") === bankKey(name));
+    if (alreadyOnDate) {
+      alert(`${name} is already on this date's Log. The existing activity remains in place.`);
+      document.body.removeChild(overlay);
+      render();
+      return;
+    }
+    setExerciseList(date, dayId, [...getExerciseList(date, dayId), newEx]);
 
     if (!explicitListKey) state.selectedDayId = dayId;
     document.body.removeChild(overlay);

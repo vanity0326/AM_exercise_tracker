@@ -1,0 +1,9 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 64
+
+- Level Up reuses the matching activity already present in that date's Log, instead of creating a second copy. Matching is limited to that date's lists; saved routines are not mistaken for today's activities.
+- Duplicate same-name activities are suppressed across the primary Log and finisher display. Adding an exercise already present in that date's Log keeps the existing activity rather than creating another.
+- At a Glance and Assign Classes present one row per exercise name even when legacy records contain multiple IDs for the same activity.
+- Assign Classes now includes a per-date “Remove class assignment” action. Removing it clears only that date's class link; exercise data, completed workout records, and the saved class remain available.
+- Existing completion details and dated history are preserved. Version labels and offline cache updated to v64.
+
+Verification: JavaScript syntax checks passed for app.js, class-library.js, marathon.js, and sw.js. The package contents and release references were checked. No package test/build scripts are defined. Browser behavior, cross-device sync, and deployment were not exercised.

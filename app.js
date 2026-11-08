@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v65";
+const APP_VERSION = "v67";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -1165,21 +1165,31 @@ function overviewActivitiesFor(date) {
   const plannedActivities = [...cardioExercises, ...finishers];
   const activities = [];
   const activityByName = new Map();
-  const addActivity = (name, cls, detail = "") => {
+  const addActivity = (name, cls, detail = "", classToken = "") => {
     const key = bankKey(name || "");
     if (key && activityByName.has(key)) {
       const existing = activities[activityByName.get(key)];
-      if (!existing.className && cls) existing.className = classLabel(cls);
+      if (cls) {
+        const label = classLabel(cls);
+        const token = classToken || label;
+        if (!existing.classTokens.includes(token)) {
+          existing.classTokens.push(token);
+          existing.classNames.push(label);
+        }
+        existing.className = existing.classNames.join(" | ");
+      }
       if (!existing.detail && detail) existing.detail = detail;
       return;
     }
     if (key) activityByName.set(key, activities.length);
-    activities.push({ name, className:cls ? classLabel(cls) : "", detail });
+    const classNames = cls ? [classLabel(cls)] : [];
+    const classTokens = cls ? [classToken || classLabel(cls)] : [];
+    activities.push({ name, classNames, classTokens, className:classNames.join(" | "), detail });
   };
-  plannedActivities.forEach(activity => addActivity(activity.name, activity.cls));
-  cardioSessions.forEach(session => addActivity(session.name, session.cls));
+  plannedActivities.forEach(activity => addActivity(activity.name, activity.cls, "", activity.id));
+  cardioSessions.forEach(session => addActivity(session.name, session.cls, "", session.id));
   if (run?.workout) {
-    addActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), [run.workout.title, run.workout.detail].filter(Boolean).join(" · "));
+    addActivity("Marathon walk/run", classFor(marathonAudioSession?.session?.classId), [run.workout.title, run.workout.detail].filter(Boolean).join(" · "), marathonAudioSession?.sourceId || MARATHON_RUN_CLASS_ID);
   } else if (!activities.length && dayLog.plan?.primary) {
     addActivity(planPrimaryLabel(dayLog.plan.primary, dayLog.plan), null);
   }
@@ -2968,7 +2978,16 @@ function openAddExerciseModal(explicitListKey) {
     const newEx = { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit };
     const date = state.selectedDate;
     upsertBank({ ...newEx, dayDesignation: bankDaySelect.value || "" });
-    const alreadyOnDate = Object.values(logs[date]?.lists || {}).flat().some(ex => bankKey(ex.name || "") === bankKey(name));
+    // Only lists rendered in this date's Log are evidence of an existing
+    // activity. Other stored list keys can be stale or belong to a different
+    // activity type, so scanning every saved list can report invisible items.
+    const visibleDayId = selectedDayInfo()?.id || dayId;
+    const primaryNames = new Set(getExerciseList(date, visibleDayId).map(ex => bankKey(ex.name || "")).filter(Boolean));
+    const visibleExercises = [
+      ...getExerciseList(date, visibleDayId),
+      ...getExerciseList(date, finisherKey(visibleDayId)).filter(ex => !primaryNames.has(bankKey(ex.name || ""))),
+    ];
+    const alreadyOnDate = visibleExercises.some(ex => bankKey(ex.name || "") === bankKey(name));
     if (alreadyOnDate) {
       alert(`${name} is already on this date's Log. The existing activity remains in place.`);
       document.body.removeChild(overlay);

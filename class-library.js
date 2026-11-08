@@ -123,8 +123,8 @@ function editClassSession(date, exerciseId, exerciseName, currentOverride, alias
   const overlay=el(`<div class="modal-overlay"><div class="modal cl-modal"><h3>Class for ${safeText(exerciseName)}</h3><p class="field-hint">${safeText(date)} · Removing this assignment keeps the exercise, workout record, and saved class in the library.</p><form id="cl-session"><label class="form-row">Saved class</label>${classPickerMarkup(current.classId,exerciseName)}<button class="btn-secondary" type="button" id="cl-new">+ Create New Class</button><details><summary>Effort & session details</summary><div class="cl-fields"><label class="form-row">Target effort<select name="target">${effortOptions(current.target)}</select></label><label class="form-row">Actual effort<select name="actual">${effortOptions(current.actual)}</select></label><label class="form-row">Modifications<textarea name="modifications">${safeText(current.modifications||'')}</textarea></label><label class="form-row">Notes<textarea name="notes">${safeText(current.notes||'')}</textarea></label><label class="form-row">Would repeat?<select name="repeat">${['','Yes','Maybe','No'].map(v=>`<option ${current.repeat===v?'selected':''}>${v}</option>`).join('')}</select></label></div></details><div class="modal-actions"><button type="button" class="btn-secondary cl-cancel">Cancel</button>${hasAssignment?'<button type="button" class="btn-secondary" id="cl-remove">Remove class assignment</button>':''}<button class="btn-primary" type="submit">Save</button></div></form></div></div>`);
   const close=()=>overlay.remove();overlay.onclick=e=>{if(e.target===overlay)close()};overlay.querySelector('.cl-cancel').onclick=close;
   overlay.querySelector('#cl-new').onclick=()=>openClassEditor(null,id=>{if(document.body.contains(overlay)){overlay.querySelector('.cl-picker')?.selectClass(id)}});
-  overlay.querySelector('#cl-remove')?.addEventListener('click',()=>{if(!confirm(`Remove the class assignment for ${exerciseName} on ${date}? The exercise and saved class remain available.`))return;ids.forEach(id=>{if(logs[date]?.classSessions)delete logs[date].classSessions[id]});saveLogs(logs);close();render()});
-  overlay.querySelector('form').onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget).entries()); if(!logs[date])logs[date]={dayId:'cardio',entries:{}};if(!logs[date].classSessions)logs[date].classSessions={};ids.forEach(id=>{if(id!==exerciseId)delete logs[date].classSessions[id]});logs[date].classSessions[exerciseId]={...data,exerciseName};saveLogs(logs);close();render()};document.body.appendChild(overlay);wireClassPicker(overlay);
+  overlay.querySelector('#cl-remove')?.addEventListener('click',()=>{if(!confirm(`Remove this class assignment for ${exerciseName} on ${date}? Other classes for this activity, the exercise, and the saved class remain available.`))return;delete logs[date]?.classSessions?.[exerciseId];saveLogs(logs);close();render()});
+  overlay.querySelector('form').onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget).entries()); if(!logs[date])logs[date]={dayId:'cardio',entries:{}};if(!logs[date].classSessions)logs[date].classSessions={};logs[date].classSessions[exerciseId]={...data,exerciseName};saveLogs(logs);close();render()};document.body.appendChild(overlay);wireClassPicker(overlay);
 }
 function effortOptions(selected){return `<option value="">Not recorded</option>`+Array.from({length:10},(_,i)=>`<option value="${i+1}" ${Number(selected)===i+1?'selected':''}>${i+1} — ${effortLabel(i+1)}</option>`).join('');}
 function renderDayClassSection(date){
@@ -135,7 +135,28 @@ function renderDayClassSection(date){
  Object.entries(existing).forEach(([id,s])=>{if(id!==MARATHON_RUN_CLASS_ID&&!exerciseNames.has(id))exerciseNames.set(id,s.exerciseName||id)});
  const items=box.querySelector('.cl-day-items');
  const groups=new Map();exerciseNames.forEach((name,id)=>{const key=bankKey(name||id);let group=groups.get(key);if(!group){group={name,ids:[],finisher:false};groups.set(key,group)}group.ids.push(id);group.finisher=group.finisher||finisherIds.has(id)});
- groups.forEach(group=>{const ids=[...new Set(group.ids)];const id=ids.find(key=>existing[key]?.classId)||ids.find(key=>existing[key])||ids[0];const cur=existing[id]||{};const selected=classFor(cur.classId);const context=group.finisher?' · Finisher':'';const label=selected?classLabel(selected):'Assign class';const b=el(`<button class="btn-secondary cl-session-btn"></button>`);b.textContent=`${group.name}${context}: ${label}`;b.onclick=()=>editClassSession(date,id,group.name,cur,ids);items.appendChild(b)});
+ groups.forEach(group=>{
+  const ids=[...new Set(group.ids)];
+  const context=group.finisher?' · Finisher':'';
+  const sessions=ids.filter(id=>existing[id]&&Object.keys(existing[id]).length);
+  sessions.forEach(id=>{
+   const saved=existing[id], selected=classFor(saved.classId);
+   const label=selected?classLabel(selected):(saved.classId?'Saved class':'Class details');
+   const b=el(`<button class="btn-secondary cl-session-btn"></button>`);
+   b.textContent=`${group.name}${context}: ${label}`;
+   b.onclick=()=>editClassSession(date,id,group.name,saved,[id]);
+   items.appendChild(b);
+  });
+  const add=el(`<button class="btn-secondary cl-session-btn"></button>`);
+  add.textContent=sessions.length?`+ Add another class to ${group.name}`:`${group.name}${context}: Assign class`;
+  add.onclick=()=>{
+   const id=sessions.length
+    ? `class_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`
+    : (ids[0]||`class_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`);
+   editClassSession(date,id,group.name,{},[id]);
+  };
+  items.appendChild(add);
+ });
  if(!exerciseNames.size)items.innerHTML='<p class="field-hint">Add an exercise first, or use History to attach a class to an older workout.</p>';
  return box;
 }

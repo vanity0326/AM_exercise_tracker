@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v67";
+const APP_VERSION = "v68";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -2292,13 +2292,77 @@ function runOneTimeCleanupIfNeeded() {
 }
 
 // ---- Progress tab ----
+function renderStrengthProgress() {
+  const card = el(`<section class="strength-progress-card"><h2>Strength</h2><p class="strength-progress-note">Strength gains from your logged workouts. Choose an exercise to focus the table.</p><label class="strength-filter-label" for="strength-progress-filter">Filter by exercise</label><select id="strength-progress-filter"><option value="">All exercises</option></select><div class="strength-table-wrap"></div></section>`);
+  const definitions = {};
+  const addDefinitions = (items) => (items || []).forEach((exercise) => {
+    if (exercise?.id) definitions[exercise.id] = exercise;
+  });
+  Object.values(library || {}).forEach(addDefinitions);
+  Object.values(logs || {}).forEach((dayLog) => {
+    Object.values(dayLog?.lists || {}).forEach(addDefinitions);
+    Object.values(dayLog?.completedExercises || {}).forEach((exercise) => {
+      if (exercise?.id) definitions[exercise.id] = exercise;
+    });
+  });
+
+  const histories = {};
+  Object.keys(logs || {}).sort().forEach((date) => {
+    const dayLog = logs[date];
+    Object.entries(dayLog?.entries || {}).forEach(([id, entry]) => {
+      const exercise = definitions[id];
+      if (!exercise || (exercise.trackType && exercise.trackType !== "weight")) return;
+      const sets = (entry?.sets || []).filter((set) => set.reps != null && set.weight != null);
+      if (!sets.length) return;
+      (histories[id] ||= []).push({ date, top: Math.max(...sets.map((set) => Number(set.weight) || 0)) });
+    });
+  });
+
+  const rows = Object.entries(histories)
+    .filter(([, history]) => history.length >= 2)
+    .map(([id, history]) => ({ id, name: definitions[id].name || "Exercise", first: history[0], last: history[history.length - 1], sessions: history.length }))
+    .sort((a, b) => b.last.date.localeCompare(a.last.date) || a.name.localeCompare(b.name));
+  const filter = card.querySelector("#strength-progress-filter");
+  rows.forEach((row) => {
+    const option = el(`<option></option>`);
+    option.value = row.id;
+    option.textContent = row.name;
+    filter.appendChild(option);
+  });
+  const selectedId = rows.some((row) => row.id === state.strengthProgressFilterId) ? state.strengthProgressFilterId : "";
+  state.strengthProgressFilterId = selectedId;
+  filter.value = selectedId;
+  filter.onchange = () => { state.strengthProgressFilterId = filter.value; render(); };
+
+  const shownRows = selectedId ? rows.filter((row) => row.id === selectedId) : rows;
+  const tableWrap = card.querySelector(".strength-table-wrap");
+  if (!shownRows.length) {
+    tableWrap.appendChild(el(`<div class="empty-state">Log a weighted exercise at least twice to see strength progress here.</div>`));
+  } else {
+    const table = el(`<table class="strength-progress-table"><thead><tr><th>Exercise</th><th>Progress</th><th>Change</th></tr></thead><tbody></tbody></table>`);
+    const body = table.querySelector("tbody");
+    shownRows.forEach((row) => {
+      const delta = row.last.top - row.first.top;
+      const tr = el(`<tr><th scope="row"></th><td></td><td></td></tr>`);
+      tr.children[0].textContent = row.name;
+      tr.children[1].textContent = `${row.first.top} → ${row.last.top} lbs · ${row.sessions} sessions since ${fmtDate(row.first.date)}`;
+      tr.children[2].textContent = delta === 0 ? "±0" : `${delta > 0 ? "+" : ""}${delta}`;
+      if (delta > 0) tr.children[2].classList.add("strength-gain");
+      body.appendChild(tr);
+    });
+    tableWrap.appendChild(table);
+  }
+  return card;
+}
+
 function renderProgress() {
   const wrap = document.createElement("div");
+  wrap.appendChild(renderStrengthProgress());
   const exMap = allExercises();
   const exList = Object.values(exMap);
 
   if (exList.length === 0) {
-    wrap.appendChild(el(`<div class="empty-state">Add exercises to see progress charts.</div>`));
+    wrap.appendChild(el(`<div class="empty-state">Add exercises to see individual progress charts.</div>`));
     return wrap;
   }
 

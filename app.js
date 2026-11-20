@@ -1,13 +1,15 @@
 // ---------- Data ----------
-const APP_VERSION = "v69";
+const APP_VERSION = "v70";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
 // finisher list. Rest is the only exception (no logging needed).
 const LS_DAY_DESIGNATIONS = "iron-log-day-designations";
 const DEFAULT_DAY_DESIGNATIONS = [
-  { id:"upper", label:"Upper Lift", loggable:true, primaryValue:"upper" },
-  { id:"lower", label:"Lower Lift", loggable:true, primaryValue:"lower" },
+  { id:"upper", label:"Upper A", loggable:true, primaryValue:"upper" },
+  { id:"upper-b", label:"Upper B", loggable:true, primaryValue:"upper-b" },
+  { id:"lower", label:"Lower A", loggable:true, primaryValue:"lower" },
+  { id:"lower-b", label:"Lower B", loggable:true, primaryValue:"lower-b" },
   { id:"core", label:"Core", loggable:true, primaryValue:"core" },
   { id:"mobility", label:"Mobility", loggable:true, primaryValue:"mob" },
   { id:"pilates", label:"Pilates", loggable:true, primaryValue:"pilates" },
@@ -158,9 +160,61 @@ function migrateRoutineTemplates() {
 
 // Strength routine keys are initialized here. Other day-type and finisher
 // templates are added to this same library as the user creates them.
-const DEFAULT_LIBRARY = { upper: [], lower: [] };
+const DEFAULT_LIBRARY = { upper: [], "upper-b": [], lower: [], "lower-b": [] };
 
-const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
+// Version 70 strength-block templates. Existing user templates are never
+// overwritten; these are installed only where a routine is currently empty.
+function v70Exercise(id, name, sets, reps, weights = []) {
+  return { id, name, trackType:"weight", numSets:sets, targets:Array.isArray(reps) ? reps : Array.from({length:sets},()=>reps), weights:Array.from({length:sets},(_,i)=>weights[i] ?? null) };
+}
+const V70_STRENGTH_ROUTINES = {
+  lower: [
+    v70Exercise("v70-leg-press-a","Leg Press Machine",3,[10,10,8],[125,130,135]),
+    v70Exercise("v70-leg-extension-a","Leg Extension Machine",3,[10,10,8]),
+    v70Exercise("v70-hip-thrust-a","Hip Thrust",3,[10,10,8],[20,20,20]),
+    v70Exercise("v70-leg-curl-a","Leg Curl (Prone)",3,[10,10,8],[80,82.5,85]),
+    v70Exercise("v70-hip-abduction-a","Hip Abduction Machine",3,[12,10,10],[190,200,210])
+  ],
+  "upper": [
+    v70Exercise("v70-chest-press-left-a","Chest Press Converging (Left)",3,[10,10,8],[45,50,55]),
+    v70Exercise("v70-chest-press-right-a","Chest Press Converging (Right)",3,[10,10,8],[50,55,60]),
+    v70Exercise("v70-high-row-left-a","High Row Machine Iso Lateral (Left)",3,[10,10,8],[40,45,50]),
+    v70Exercise("v70-high-row-right-a","High Row Machine Iso Lateral (Right)",3,[10,10,8],[45,50,55]),
+    v70Exercise("v70-shoulder-press-a","Shoulder Press Machine",3,[10,10,8]),
+    v70Exercise("v70-lateral-raise-a","Lateral Raise Machine",2,[12,12]),
+    v70Exercise("v70-triceps-a","Tricep Extension Machine",2,[10,10]),
+    v70Exercise("v70-biceps-a","Biceps Curl",2,[10,10],[50,55])
+  ],
+  "lower-b": [
+    v70Exercise("v70-leg-curl-b","Leg Curl (Seated)",3,[10,10,8]),
+    v70Exercise("v70-hip-thrust-b","Hip Thrust",3,[10,10,8],[20,20,20]),
+    v70Exercise("v70-leg-press-b","Leg Press Machine",3,[10,10,8],[125,130,135]),
+    v70Exercise("v70-leg-extension-b","Leg Extension Machine",3,[12,10,10]),
+    v70Exercise("v70-hip-abduction-b","Hip Abduction Machine",2,[12,12],[190,200])
+  ],
+  "upper-b": [
+    v70Exercise("v70-lat-pulldown-b","Lat Pulldown Machine",3,[10,10,8],[70,75,80]),
+    v70Exercise("v70-seated-row-b","Seated Row Machine",3,[10,10,8]),
+    v70Exercise("v70-chest-press-b","Chest Press Machine",3,[10,10,8]),
+    v70Exercise("v70-reverse-pec-deck-b","Reverse Pec Deck",3,[12,12,10]),
+    v70Exercise("v70-biceps-b","Biceps Curl Machine",3,[10,10,8]),
+    v70Exercise("v70-triceps-b","Triceps Extension Machine",3,[10,10,8]),
+    v70Exercise("v70-lateral-raise-b","Lateral Raise Machine",2,[12,12])
+  ]
+};
+function installV70StrengthRoutines() {
+  let changed = false;
+  for (const [key, routine] of Object.entries(V70_STRENGTH_ROUTINES)) {
+    if (!Array.isArray(library[key]) || library[key].length === 0) {
+      library[key] = routine.map(ex => ({...ex, targets:[...ex.targets], weights:[...ex.weights]}));
+      changed = true;
+    }
+  }
+  if (changed) saveLibrary(library);
+  return changed;
+}
+
+const PROGRESSION_BUMP = { upper: 5, "upper-b": 5, lower: 10, "lower-b": 10, other: 5 };
 const DEFAULT_TARGET_REPS = 10;
 const DEFAULT_TARGET_SECONDS = 30;
 const DEFAULT_TARGET_MINUTES = 20;
@@ -419,6 +473,7 @@ async function pullRemote(isInitial) {
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
         clearExerciseBankForV65(remote);
+        installV70StrengthRoutines();
         setSyncStatus("syncing");
         pushRemote();
         return;
@@ -456,6 +511,7 @@ async function pullRemote(isInitial) {
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
       if (migrateRoutineTemplates()) repairRemoteWorkoutData = true;
+      if (installV70StrengthRoutines()) repairRemoteWorkoutData = true;
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
         // An older backend or stale/empty remote payload must not wipe classes
         // already stored on this device. Preserve them and repair remote below.
@@ -492,12 +548,14 @@ async function pullRemote(isInitial) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
       clearExerciseBankForV65(null);
+      installV70StrengthRoutines();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
       setSyncStatus("synced");
     }
   } catch (e) {
+    installV70StrengthRoutines();
     setSyncStatus(navigator.onLine ? "error" : "offline");
   }
 }
@@ -840,7 +898,7 @@ function renderTabs() {
 // former planner. At a Glance only reads these values.
 function weekPrimaryOptions() {
   const options = [
-    ["", "— Choose Primary —"], ["upper", dayDesignationLabel("upper")], ["lower", dayDesignationLabel("lower")],
+    ["", "— Choose Primary —"], ["upper", dayDesignationLabel("upper")], ["upper-b", dayDesignationLabel("upper-b")], ["lower", dayDesignationLabel("lower")], ["lower-b", dayDesignationLabel("lower-b")],
     ["fullbody", "Full Body"], ["core", dayDesignationLabel("core")], ["mob", dayDesignationLabel("mobility")],
     ["pilates", dayDesignationLabel("pilates")], ["swim", "Swim"], ["ellip", "Elliptical"],
     ["cardio", dayDesignationLabel("cardio")], ["walk", "Walking"], ["treadmill", "Treadmill"],
@@ -858,7 +916,7 @@ function weekPrimaryOptions() {
 }
 const WEEK_LEVELUP_OPTIONS = [["", "— Choose from Exercise Bank —"]];
 const PLAN_TO_TRACKER_DAY = {
-  upper:"upper", lower:"lower", core:"core", mob:"mobility", pilates:"pilates",
+  upper:"upper", "upper-b":"upper-b", lower:"lower", "lower-b":"lower-b", core:"core", mob:"mobility", pilates:"pilates",
   rest:"rest", cardio:"cardio", swim:"cardio", ellip:"cardio", "cardio-class":"cardio",
   walk:"cardio", treadmill:"cardio", run:"cardio", fullbody:"upper",
 };
@@ -1067,7 +1125,9 @@ function weeklyBalance(start) {
     const categories = new Set();
     const addDesignation = id => {
       if (!id) return;
-      if (id === "upper" || id === "lower" || id === "core" || id === "rest") categories.add(id);
+      if (id === "upper" || id === "upper-b") categories.add("upper");
+      if (id === "lower" || id === "lower-b") categories.add("lower");
+      if (id === "core" || id === "rest") categories.add(id);
       if (id === "mobility" || id === "mob") categories.add("mobility");
       if (id === "pilates") { categories.add("core"); categories.add("mobility"); }
     };
@@ -1157,7 +1217,7 @@ function overviewQuote(iso) {
 function atAGlanceDayLabel(label) { return /day$/i.test(label) ? label : label + " Day"; }
 function overviewDayLabel(date) {
   const day = logs[date] || {};
-  const plannedId = day.plan?.primary === "run" ? marathonDesignationId() : {upper:"upper",lower:"lower",core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
+  const plannedId = day.plan?.primary === "run" ? marathonDesignationId() : {upper:"upper", "upper-b":"upper-b", lower:"lower", "lower-b":"lower-b", core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
   const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
@@ -1478,6 +1538,13 @@ function setDayType(dayId) {
   render();
 }
 
+function renderStrengthCardioGuide(dayId) {
+  if (!["upper","upper-b","lower","lower-b"].includes(dayId)) return null;
+  const lower = dayId === "lower" || dayId === "lower-b";
+  const guide = el(`<section class="routine-save-notice" style="margin:12px 0"><strong>Optional cardio suggestion</strong><div style="margin-top:5px">${lower ? "After lower-body strength, choose easy stationary cycling (recumbent bike preferred if more comfortable) or skip cardio if your Achilles or legs are fatigued." : "After upper-body strength, rotate the elliptical and recumbent bike at a comfortable intensity. Lap swimming can be scheduled separately on a less crowded pool day; no Saturday swimming."}</div><div style="margin-top:5px">Cardio is optional. Your PT guidance, Achilles symptoms and recovery take priority. Use the existing Add Activity / Finisher controls to log what you actually do.</div></section>`);
+  return guide;
+}
+
 function renderToday() {
   syncPlannedLevelUpActivity(state.selectedDate);
   const wrap = document.createElement("div");
@@ -1505,6 +1572,7 @@ function renderToday() {
 
   const runStrip = renderRunStrip(state.selectedDate);
   if (runStrip) wrap.appendChild(runStrip);
+  if (current) { const cardioGuide = renderStrengthCardioGuide(current.id); if (cardioGuide) wrap.appendChild(cardioGuide); }
 
   if (!current) {
     const prompt = el(`<div class="empty-state">Choose this date’s Primary activity in Plan, then return here to log it.</div>`);
@@ -1573,7 +1641,7 @@ function renderToday() {
 
 // What the weekly plan has down for this date (if anything).
 const PLAN_LABELS = {
-  swim: "Swim", ellip: "Elliptical", upper: "Upper lifting", lower: "Lower lifting", fullbody: "Full Body",
+  swim: "Swim", ellip: "Elliptical", upper: "Upper A", "upper-b": "Upper B", lower: "Lower A", "lower-b": "Lower B", fullbody: "Full Body",
   core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio", walk: "Walking",
   treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",

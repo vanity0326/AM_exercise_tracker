@@ -1,0 +1,19 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 70
+
+Strength block and routine templates
+- Added Upper A, Upper B, Lower A, and Lower B as four distinct selectable routine types.
+- Added editable machine-focused starter routines with deliberate exercise order.
+- Existing non-empty saved routines are preserved; starter templates fill empty routine slots only.
+- Upper/Lower variants count toward the existing weekly Upper/Lower balance categories.
+
+User-specific training constraints
+- No cable exercises in the starter strength routines.
+- No calf raises in the lower-body routines.
+- Leg press is retained, subject to PT-approved range and technique.
+- No dedicated gym core exercises; use Apple Fitness+ Core classes separately.
+- Existing Achilles PT, swimming, elliptical, and activity logging remain in place.
+- Added optional cardio guidance to strength days, including recumbent bike as an alternative to elliptical and a reminder that Saturday swimming is avoided. Suggestions remain optional and subordinate to PT guidance, Achilles symptoms, and recovery.
+
+Compatibility
+- Preserved existing tabs, workout logs, historical snapshots, exercise bank, classes, marathon tools, Achilles PT page, backups, and Netlify sync endpoint.
+- App and offline cache updated to v70.

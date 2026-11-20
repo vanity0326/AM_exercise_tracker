@@ -62,3 +62,17 @@ The former Circuit grouping is presented as Superset. A superset can be saved to
 Exercise cards include substitution controls for temporary replacements or remembered alternatives. Removal offers separate choices for this workout, the saved routine, archiving from Exercise Bank, or permanently deleting from Exercise Bank. Archiving/deleting a bank item does not silently remove it from existing routines or historical records.
 
 History includes full JSON Backup / Restore. Backups include library routines and order, supersets, workout logs/history, Exercise Bank, classes, day designations, and marathon data. Restore replaces the current dataset after confirmation to avoid duplicate records. The existing per-set entry model continues to save entered data; unfinished sets are not auto-completed.
+
+VERSION 70 — Strength block (November 23, 2026–January 1, 2027)
+- Added Upper A, Upper B, Lower A, and Lower B as separate selectable workout day types using the existing routine-template and dated workout snapshot system.
+- Seeded machine-focused starter routines only where a corresponding routine is empty. Existing non-empty user routines are preserved. The starter order prioritizes compound/multi-joint machine movements before smaller isolation work.
+- Lower routines include leg press, leg extension, hip thrust, leg curl, and hip abduction. No calf raises are included. Leg press remains subject to the user's PT-approved range and technique.
+- Upper routines use machine chest press, rows, pulldowns, shoulder press, reverse pec deck/lateral raise, biceps and triceps. No cable exercises are included.
+- Dedicated gym core exercises are omitted; the user's preferred core training is Apple Fitness+ Core classes.
+- Added a contextual optional-cardio note to Upper/Lower workout days. It suggests comfortable cycling choices, notes that lap swimming is separate and Saturday swimming is avoided, and defers to PT/Achilles symptoms and recovery. Existing Add Activity / Finisher logging remains the way to record completed cardio.
+- Added the four strength day types to weekly planning and mapped Upper A/B and Lower A/B into the existing weekly Upper/Lower balance categories.
+- Retained existing swim, elliptical, PT/Achilles, Pilates, marathon, history, progress, backup/restore, and sync features. No new duplicate activity trackers were added.
+- Updated app, stylesheet references, and service-worker cache to v70.
+- The strength block is a set of editable routine templates; the user can assign dates in the existing Plan tab. Existing dated logs and completed workout snapshots are not rewritten.
+
+Safety note: New or changed lower-body exercises should be reviewed against the user's current PT instructions. No calf raises are prescribed. Cardio suggestions are optional and must yield to Achilles symptoms and PT guidance.

@@ -1,7 +1,11 @@
-Toni's Total Training Tracker — Version 69
+Toni's Total Training Tracker — Version 70
 
-Deploy the entire contents of this package to the existing Netlify site. Include the updated netlify/functions/data.js function as well as the static files; Version 69 uses the existing /api/data endpoint and adds explicit full-dataset replacement support for restoring a complete JSON backup.
+Deploy the entire contents of this package to the existing Netlify site, including the updated netlify/functions/data.js function and all static files. Keep the folder structure intact.
 
-After deployment, reload the tracker. The app and service-worker asset references use v69 so browsers will refresh the updated files. There is no need to run restore.html for this upgrade; that page is retained only for the earlier one-time recovered-history restoration.
+Version 70 uses the existing /api/data endpoint and existing shared-data format. No database schema migration or one-time restore is required. After deployment, reload the tracker; the v70 service-worker cache and asset references refresh the app.
 
-Before making changes on multiple devices, allow each device to finish syncing. Version 69 routine templates, dated workout snapshots, supersets, and backups are synchronized through the existing Netlify Blobs store.
+The new Upper A, Upper B, Lower A, and Lower B routines are editable through the existing Log routine controls. The new day types are selectable in the existing Plan workflow. The strength block dates are assigned in Plan; the app does not overwrite existing dated logs or completed workout history.
+
+Existing non-empty routine templates are preserved. Empty routine slots receive the v70 starter template. Allow the app to finish syncing on each device before making edits on another device.
+
+The lower-body starter routines omit calf raises. Leg press and all other lower-body exercises remain subject to the user's PT guidance. Optional cardio suggestions are not medical clearance; follow PT instructions and symptom response.

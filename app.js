@@ -24,7 +24,13 @@ function normalizeDayDesignations(input) {
     if (!byId.has(defaultDay.id)) byId.set(defaultDay.id, { ...defaultDay });
     else byId.set(defaultDay.id, { ...defaultDay, ...byId.get(defaultDay.id), id:defaultDay.id });
   });
-  return [...byId.values()].map(d => ({ ...d, label:String(d.label).trim(), loggable:d.loggable !== false }));
+  return [...byId.values()].map(d => {
+    let label = String(d.label).trim();
+    // Rename only the untouched Version 69 defaults; preserve user-custom labels.
+    if (d.id === "upper" && label === "Upper Lift") label = "Upper A";
+    if (d.id === "lower" && label === "Lower Lift") label = "Lower A";
+    return { ...d, label, loggable:d.loggable !== false };
+  });
 }
 function mergeDayDesignationLists(remoteList, localList, preferLocal) {
   const merged = new Map();
@@ -162,12 +168,13 @@ function migrateRoutineTemplates() {
 // templates are added to this same library as the user creates them.
 const DEFAULT_LIBRARY = { upper: [], "upper-b": [], lower: [], "lower-b": [] };
 
-// Version 70 strength-block templates. Existing user templates are never
-// overwritten; these are installed only where a routine is currently empty.
+// Version 70 strength-block templates. A one-time first-load migration installs
+// these redesigned routines while preserving completed dated workout snapshots.
 function v70Exercise(id, name, sets, reps, weights = []) {
   return { id, name, trackType:"weight", numSets:sets, targets:Array.isArray(reps) ? reps : Array.from({length:sets},()=>reps), weights:Array.from({length:sets},(_,i)=>weights[i] ?? null) };
 }
 const V70_STRENGTH_ROUTINES = {
+  // Lower A: compound quadriceps movement first, then glutes and supporting work.
   lower: [
     v70Exercise("v70-leg-press-a","Leg Press Machine",3,[10,10,8],[125,130,135]),
     v70Exercise("v70-leg-extension-a","Leg Extension Machine",3,[10,10,8]),
@@ -175,43 +182,58 @@ const V70_STRENGTH_ROUTINES = {
     v70Exercise("v70-leg-curl-a","Leg Curl (Prone)",3,[10,10,8],[80,82.5,85]),
     v70Exercise("v70-hip-abduction-a","Hip Abduction Machine",3,[12,10,10],[190,200,210])
   ],
-  "upper": [
+  // Upper A: push/pull compounds first, then shoulders and arms.
+  upper: [
     v70Exercise("v70-chest-press-left-a","Chest Press Converging (Left)",3,[10,10,8],[45,50,55]),
     v70Exercise("v70-chest-press-right-a","Chest Press Converging (Right)",3,[10,10,8],[50,55,60]),
     v70Exercise("v70-high-row-left-a","High Row Machine Iso Lateral (Left)",3,[10,10,8],[40,45,50]),
     v70Exercise("v70-high-row-right-a","High Row Machine Iso Lateral (Right)",3,[10,10,8],[45,50,55]),
+    v70Exercise("v70-lat-pulldown-a","Lat Pulldown Machine",3,[10,10,8],[70,75,80]),
     v70Exercise("v70-shoulder-press-a","Shoulder Press Machine",3,[10,10,8]),
     v70Exercise("v70-lateral-raise-a","Lateral Raise Machine",2,[12,12]),
-    v70Exercise("v70-triceps-a","Tricep Extension Machine",2,[10,10]),
+    v70Exercise("v70-triceps-a","Tricep Extension Machine",2,[10,10],[65,70]),
     v70Exercise("v70-biceps-a","Biceps Curl",2,[10,10],[50,55])
   ],
+  // Lower B: hamstring/glute emphasis; no calf loading or impact work.
   "lower-b": [
-    v70Exercise("v70-leg-curl-b","Leg Curl (Seated)",3,[10,10,8]),
+    v70Exercise("v70-leg-curl-b","Leg Curl (Seated)",3,[10,10,8],[80,82.5,85]),
     v70Exercise("v70-hip-thrust-b","Hip Thrust",3,[10,10,8],[20,20,20]),
     v70Exercise("v70-leg-press-b","Leg Press Machine",3,[10,10,8],[125,130,135]),
-    v70Exercise("v70-leg-extension-b","Leg Extension Machine",3,[12,10,10]),
+    v70Exercise("v70-leg-extension-b","Leg Extension Machine",2,[12,10]),
     v70Exercise("v70-hip-abduction-b","Hip Abduction Machine",2,[12,12],[190,200])
   ],
+  // Upper B: alternate back emphasis, balanced pressing, rear delts and arms.
   "upper-b": [
     v70Exercise("v70-lat-pulldown-b","Lat Pulldown Machine",3,[10,10,8],[70,75,80]),
     v70Exercise("v70-seated-row-b","Seated Row Machine",3,[10,10,8]),
     v70Exercise("v70-chest-press-b","Chest Press Machine",3,[10,10,8]),
     v70Exercise("v70-reverse-pec-deck-b","Reverse Pec Deck",3,[12,12,10]),
+    v70Exercise("v70-shoulder-press-b","Shoulder Press Machine",2,[10,10]),
     v70Exercise("v70-biceps-b","Biceps Curl Machine",3,[10,10,8]),
     v70Exercise("v70-triceps-b","Triceps Extension Machine",3,[10,10,8]),
     v70Exercise("v70-lateral-raise-b","Lateral Raise Machine",2,[12,12])
   ]
 };
 function installV70StrengthRoutines() {
-  let changed = false;
+  const marker = "iron-log-v70-strength-migration";
+  if (localStorage.getItem(marker) === "complete") return false;
+  // A second device can recognize an already-migrated/synced library without
+  // relying on device-local flags, and must not overwrite later user edits.
+  const alreadyInstalled = ["upper","upper-b","lower","lower-b"].every(key =>
+    Array.isArray(library[key]) && library[key].some(ex => String(ex.id || "").startsWith("v70-"))
+  );
+  if (alreadyInstalled) { localStorage.setItem(marker, "complete"); return false; }
+  // Version 70 is the first complete A/B program. On its first load, deliberately
+  // replace the old Upper/Lower templates with the redesigned A routines and
+  // install the two B routines. Existing dated logs and completed sets are untouched.
   for (const [key, routine] of Object.entries(V70_STRENGTH_ROUTINES)) {
-    if (!Array.isArray(library[key]) || library[key].length === 0) {
-      library[key] = routine.map(ex => ({...ex, targets:[...ex.targets], weights:[...ex.weights]}));
-      changed = true;
-    }
+    const copy = routine.map(ex => ({...ex, targets:[...ex.targets], weights:[...ex.weights]}));
+    // Route changes through the app's routine editor path so completed dated
+    // workouts are snapshotted before their shared template changes.
+    setExerciseList("2026-11-23", key, copy, "routine");
   }
-  if (changed) saveLibrary(library);
-  return changed;
+  localStorage.setItem(marker, "complete");
+  return true;
 }
 
 const PROGRESSION_BUMP = { upper: 5, "upper-b": 5, lower: 10, "lower-b": 10, other: 5 };
@@ -474,6 +496,7 @@ async function pullRemote(isInitial) {
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
         clearExerciseBankForV65(remote);
         installV70StrengthRoutines();
+        preloadV70StrengthBlock();
         setSyncStatus("syncing");
         pushRemote();
         return;
@@ -512,6 +535,7 @@ async function pullRemote(isInitial) {
       refreshDayDefinitions();
       if (migrateRoutineTemplates()) repairRemoteWorkoutData = true;
       if (installV70StrengthRoutines()) repairRemoteWorkoutData = true;
+      if (preloadV70StrengthBlock()) repairRemoteWorkoutData = true;
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
         // An older backend or stale/empty remote payload must not wipe classes
         // already stored on this device. Preserve them and repair remote below.
@@ -549,6 +573,7 @@ async function pullRemote(isInitial) {
       // point stamps local storage as newer and can overwrite data on a new device.
       clearExerciseBankForV65(null);
       installV70StrengthRoutines();
+      preloadV70StrengthBlock();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
@@ -556,6 +581,7 @@ async function pullRemote(isInitial) {
     }
   } catch (e) {
     installV70StrengthRoutines();
+    preloadV70StrengthBlock();
     setSyncStatus(navigator.onLine ? "error" : "offline");
   }
 }
@@ -978,6 +1004,41 @@ function planOptionLabel(value, plan = null) {
   return PLAN_LABELS[value] || value || "";
 }
 function planForDate(date) { return logs[date]?.plan || {}; }
+
+// Preload the six-week strength block once. Existing dated plans are preserved;
+// blank dates receive editable suggestions, never locked appointments.
+function preloadV70StrengthBlock() {
+  const marker = "iron-log-v70-block-preloaded";
+  if (localStorage.getItem(marker) === "complete") return false;
+  if (Object.values(logs).some(day => day?.plan?.v70Suggested)) {
+    localStorage.setItem(marker, "complete");
+    return false;
+  }
+  const assignments = {
+    // Thanksgiving week: Thursday is left free for the possible gym closure.
+    "2026-11-23":"lower", "2026-11-24":"upper", "2026-11-25":"swim", "2026-11-27":"upper-b", "2026-11-29":"lower-b",
+    // Regular weeks: Wednesday lap swim; PT remains on its existing schedule.
+    "2026-11-30":"lower", "2026-12-01":"upper", "2026-12-02":"swim", "2026-12-03":"lower-b", "2026-12-04":"upper-b",
+    "2026-12-07":"lower", "2026-12-08":"upper", "2026-12-09":"swim", "2026-12-10":"lower-b", "2026-12-11":"upper-b",
+    "2026-12-14":"lower", "2026-12-15":"upper", "2026-12-16":"swim", "2026-12-17":"lower-b", "2026-12-18":"upper-b",
+    // Christmas week: Friday is left free; Saturday is strength, not swimming.
+    "2026-12-21":"lower", "2026-12-22":"upper", "2026-12-23":"swim", "2026-12-24":"lower-b", "2026-12-26":"upper-b",
+    // New Year's week: Friday is left free; Saturday carries the fourth session.
+    "2026-12-28":"lower", "2026-12-29":"upper", "2026-12-30":"swim", "2026-12-31":"lower-b", "2027-01-02":"upper-b", "2027-01-03":"rest"
+  };
+  let changed = false;
+  for (const [date, primary] of Object.entries(assignments)) {
+    if (logs[date]?.plan?.primary) continue; // never overwrite an existing plan
+    const day = logs[date] || { entries:{} };
+    day.plan = { ...(day.plan || {}), primary, isCommute:false, v70Suggested:true };
+    day.dayId = trackerDayForPlanPrimary(primary) || primary;
+    logs[date] = day;
+    changed = true;
+  }
+  if (changed) saveLogs(logs);
+  localStorage.setItem(marker, "complete");
+  return changed;
+}
 function bankExerciseForPlan(key) {
   const entry = bank[key];
   if (!entry) return null;
@@ -1164,7 +1225,7 @@ function renderWeeklyPlan() {
   const start = mondayOfIso(state.selectedDate);
   const end = addDaysIso(start,6);
   const range = `${fmtDate(start)} – ${fmtDate(end)}, ${isoToParts(end).year}`;
-  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary for each dated activity and select Level Up from the exercise bank. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower target 1 · Core/Mobility/Rest minimum 1</span></div><div class="log-week-counts"></div></div></section>`);
+  const panel = el(`<section class="log-week-plan"><div class="log-week-head"><div><div class="log-week-kicker">WEEKLY PLAN</div><h2></h2><p>The planner week follows this activity date. Choose a Primary for each dated activity and select Level Up from the exercise bank. Pilates Reformer covers both Core and Mobility once.</p></div></div><div class="log-week-days"></div><div class="log-week-balance"><div class="log-week-balance-head"><strong>Weekly balance</strong><span>Upper/Lower strength target 2 each · recovery as needed</span></div><div class="log-week-counts"></div></div></section>`);
   panel.querySelector("h2").textContent = range;
   const days = panel.querySelector(".log-week-days");
   WEEKDAY_LABELS.forEach((label,i) => {
@@ -1184,10 +1245,10 @@ function renderWeeklyPlan() {
     days.appendChild(card);
   });
   const balance = weeklyBalance(start), holder = panel.querySelector(".log-week-counts");
-  const targets = {upper:1,lower:1,core:1,mobility:1,rest:1};
+  const targets = {upper:2,lower:2,core:1,mobility:1,rest:1};
   [["Upper","upper"],["Lower","lower"],["Core","core"],["Mobility","mobility"],["Rest","rest"]].forEach(([label,key]) => {
     const count = balance[key], exactTarget = key === "upper" || key === "lower";
-    const status = exactTarget ? (count === 1 ? "On target" : count === 0 ? "Need 1" : "Over target") : (count >= targets[key] ? "Target met" : "Need 1");
+    const status = exactTarget ? (count === 2 ? "On target" : count < 2 ? `Need ${2-count}` : "Over target") : (count >= targets[key] ? "Target met" : "Need 1");
     const stateClass = status === "On target" || status === "Target met" ? "met" : status === "Over target" ? "over" : "needed";
     const item = el(`<div class="log-week-count ${stateClass}"><span></span><strong></strong><small></small></div>`);
     item.querySelector("span").textContent = label;
@@ -1219,7 +1280,7 @@ function overviewDayLabel(date) {
   const day = logs[date] || {};
   const plannedId = day.plan?.primary === "run" ? marathonDesignationId() : {upper:"upper", "upper-b":"upper-b", lower:"lower", "lower-b":"lower-b", core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
-  const names = {upper:"Upper Lift Day",lower:"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
+  const names = {upper:"Upper A Day","upper-b":"Upper B Day",lower:"Lower A Day","lower-b":"Lower B Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
   const extra = day.plan?.levelup ? planOptionLabel(day.plan.levelup, day.plan) : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
@@ -1541,7 +1602,7 @@ function setDayType(dayId) {
 function renderStrengthCardioGuide(dayId) {
   if (!["upper","upper-b","lower","lower-b"].includes(dayId)) return null;
   const lower = dayId === "lower" || dayId === "lower-b";
-  const guide = el(`<section class="routine-save-notice" style="margin:12px 0"><strong>Optional cardio suggestion</strong><div style="margin-top:5px">${lower ? "After lower-body strength, choose easy stationary cycling (recumbent bike preferred if more comfortable) or skip cardio if your Achilles or legs are fatigued." : "After upper-body strength, rotate the elliptical and recumbent bike at a comfortable intensity. Lap swimming can be scheduled separately on a less crowded pool day; no Saturday swimming."}</div><div style="margin-top:5px">Cardio is optional. Your PT guidance, Achilles symptoms and recovery take priority. Use the existing Add Activity / Finisher controls to log what you actually do.</div></section>`);
+  const guide = el(`<section class="routine-save-notice" style="margin:12px 0"><strong>Optional cardio suggestion</strong><div style="margin-top:5px">${lower ? "If adding cardio, do strength first, then choose easy recumbent cycling; elliptical is an alternative only if your Achilles feels comfortable. Skip cardio when your legs or tendons are fatigued." : "If combining cardio with upper-body strength, lift first, then choose a comfortable elliptical or recumbent-bike session. Lap swimming can follow strength if desired, or be scheduled separately; never schedule swimming on Saturday."}</div><div style="margin-top:5px">Rotate the recumbent bike and elliptical for variety. Cardio is optional. PT guidance, Achilles symptoms and recovery take priority. Use the existing activity logging controls to record what you actually do.</div></section>`);
   return guide;
 }
 

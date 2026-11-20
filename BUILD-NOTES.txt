@@ -1,78 +1,34 @@
-Toni's Total Training Tracker build notes
+TOTAL TRANSFORMATION TRACKER — VERSION 70 BUILD NOTES
 
-Weekly Primary and Level Up selections now live in the Log tab and save into the existing iron-log-logs per-date records. At a Glance remains read-only and displays the saved Primary and Level Up plan.
-Pilates Reformer is a dedicated selectable/loggable day type. Planning it once contributes one Core and one Mobility component to the weekly balance, without creating two activity entries. Standalone Core and Mobility remain selectable.
-The separate Sunday Planner navigation and page are no longer included. Existing saved logs, plan records, library, bank, classes, marathon settings, sync endpoints, and storage keys are retained.
+BASELINE
+- Built from the user's uploaded Exercise_Tracker_v69_Ready_to_Deploy package.
+- Preserves the existing app architecture, data model, tabs, Netlify sync endpoint, backup/restore, exercise bank, PT page, class library, and marathon tools.
 
-Assumption: no Pilates Reformer exercise routine was supplied, so the new day type starts with an empty date-specific list. Add Reformer movements with the existing Add Exercise control. Weekly totals are planned component counts, not completion counts.
-Responsive layout update: desktop now uses a wide workspace with all seven plan days visible; tablet and phone layouts wrap plan days, tabs, and day-type buttons so those controls do not require horizontal scrolling. Mobile zoom is not restricted.
-Displayed version and offline cache were bumped to v53.1 for this responsive update.
-v53.2: the single Activity date control now drives both the day log and the displayed Monday-to-Sunday planner week. The separate planner week navigation was removed. Planned balance cards show counts against each category target; Upper and Lower target exactly one, while Core, Mobility, and Rest require at least one. These are planned counts, not completion counts.
-v53.3: consolidated the Primary choices to one Cardio option. Instructor-led sessions continue to use the existing Classes controls and class records. Existing cardio-class plan values display as Cardio and are normalized when that date is next edited.
+VERSION 70 CHANGES
+- Four preloaded strength templates: Upper A, Upper B, Lower A, Lower B.
+- Upper A and Lower A replace the old Upper Lift and Lower Lift templates on first v70 load, using the existing routine-update path so completed dated workouts are frozen before template replacement.
+- Upper B and Lower B are separately selectable and editable.
+- Strength templates are machine-focused; no cable work, calf raises, or separate gym-core exercises.
+- Core is handled through Apple Fitness+ classes outside the gym strength templates.
+- Added optional cardio guidance for elliptical and recumbent bike; swimming remains an existing activity.
+- Added a one-time editable calendar preload for 2026-11-23 through 2027-01-03. It fills only dates without an existing Primary plan.
+- Four strength sessions are scheduled each week with holiday adjustments. Wednesday lap swimming is suggested. No Saturday swimming is scheduled. PT schedule is not altered or duplicated.
+- User can move/skip workouts, edit exercises and prescriptions, and change cardio. Completed workout history is preserved.
 
-v54: Split weekly planning into its own Plan tab and keep Log focused on completing exercise entries. Both tabs use the same Activity date control, so the planner week follows the selected logging date without a second week selector. Plan day cards show planned/completed status and open the matching date in Log. Log follows the planned Primary where possible and links back to Plan when no loggable Primary is selected. History remains based on completed data and does not show plan-only dates. At a Glance remains read-only and continues reflecting the shared plan and completed records. Existing per-date logs, libraries, class records, run data, sync configuration, and storage keys are retained.
-v54.1: Removed the daily guide's minute-based progress bar and minute count. The guide now reports the number of prescribed exercises checked and clearly identifies when all exercises for that day are checked. Existing saved completion data and minute fields are preserved for the weekly review and history.
+SCHEDULE OVERVIEW
+- Thanksgiving week: Nov 23 Lower A; Nov 24 Upper A; Nov 25 Swim; Nov 27 Upper B; Nov 29 Lower B.
+- Regular weeks: Monday Lower A; Tuesday Upper A; Wednesday Swim; Thursday Lower B; Friday Upper B.
+- Christmas week: Dec 21 Lower A; Dec 22 Upper A; Dec 23 Swim; Dec 24 Lower B; Dec 26 Upper B.
+- New Year's week: Dec 28 Lower A; Dec 29 Upper A; Dec 30 Swim; Dec 31 Lower B; Jan 2 Upper B.
+- PT remains according to the user's existing PT schedule. Sundays are otherwise open for recovery or optional swimming.
 
-v54.2: Added Marathon training to the selectable Level Up options. It is stored with the existing per-date plan and appears as a planned Level Up in At a Glance. The Run tab remains the place to manage and view the dated training schedule. Existing saved plan selections and workout records are unchanged.
+SAFETY/CONSTRAINTS
+- Bilateral Achilles considerations remain prominent. PT instructions and symptom response take priority.
+- Leg press is included as user-confirmed permitted movement; calf raises are excluded.
+- Stationary cycling and elliptical are user-confirmed permitted activities; use comfortable intensity and stop/modify for symptom aggravation.
+- Marathon training is optional for this block. Pilates Reformer remains optional if offered.
 
-v54.3: Level Up now includes the current exercise bank as selectable options alongside the preset choices. Banked exercise names display in At a Glance and in the Log plan note. Selected names remain readable if the bank entry is later removed. This uses existing per-date plan storage and does not add a separate finisher area or change completed workout records.
-
-v54.4: Removed preset Level Up choices; new Level Up selections now come solely from the exercise bank. Existing saved Level Up values remain visible as prior selections until changed, and legacy Core/Mobility balance entries continue to count. New banked Level Ups are not automatically classified into weekly balance categories; choose those categories under Primary when targeting the weekly balance.
-
-v55.0: Added editable day designations in Exercise Bank management, with existing Upper Body and Lower Body assignments represented as Upper Lift and Lower Lift. Bank items can be assigned to a day, and new day names can be added or renamed for future use. Level Up choices remain bank-only; weekly balance now counts a bank-selected Level Up according to its assigned category. Pilates (Reformer) and Pilates (Mat) count toward Core and Mobility without duplicating the activity. Seeded editable entries for Dance, Cycle, Yoga, Meditation, Aquafit, Mindful Cooldown, Core, and both Pilates forms. Mindful Cooldown is assigned to Mindful Recovery Day; Core to Core; Yoga to Mobility. Class assignment is available for a planned bank Level Up. Marathon training remains in the Run tab. Existing records and synchronization data are retained.
-
-v55.1: Added Marathon Training to the exercise bank with an editable day designation, defaulting to Cardio. Existing saved Marathon Program Level Up plans are linked to the bank item so changing its designation updates weekly balance and labels for past and future plans. Marathon run planner entries and past run history now follow that designation while the Run tab continues to hold the schedule and mileage/time records. Exercise Bank management puts the Add day control up front, supports any custom day name, and displays each logged bank exercise's current designation in History. Reassigning an exercise changes its displayed category without changing dates or completed measurements.
-v55.2: Default exercise bank entries are seeded only after remote data has been loaded or an empty remote store is confirmed. A seed-only local bank from v55.1 no longer overrides saved cloud data on a new device. Saving a bank day assignment refreshes the planner immediately. History keeps the workout day label and adds the current Marathon Training designation for run sessions on the same date. Existing workout dates and measurements remain intact.
-v55.3: Exercise bank day reassignment now shows the exercise's current designation and a before-save preview, with explicit Save and Cancel controls. Designation changes update plan grouping and History labels while leaving the exercise name, dates, and completed results unchanged. Level Up displays show only the selected exercise name; they omit the “Level Up:” prefix and designation. Legacy Marathon Program plans keep their saved value and name while reading the current Marathon Training designation for weekly balance. Custom Primary plan labels use the current day name. No existing workout or plan records are rewritten.
-v56: Renamed existing class entries titled Walk/Run to Stride. Class IDs and all episode, instructor, platform, date, duration, favorite, completion, and History-link data remain unchanged. The migration is applied to the merged class catalog and synced; Marathon Training and treadmill-class matching recognize Stride. New app and service-worker cache version uses the whole-number version v56.
-
-
-v57: Achilles Rehab now uses a consecutive three-session PT rotation. Day 1 keeps the existing calf-stretch and floor-balance routine; Day 2 is the existing towel day with toe curls; Day 3 adds feet flex up/down, side-to-side, and ankle circles at 15 reps x 3 sets each. The next day is saved locally and advances only after the explicit Mark PT session complete action. Exercise checkboxes record what was actually completed. Saving day notes or taking rest days does not advance the rotation. Existing rehab entries and other tracker data are retained.
-v58 fixes:
-- Shared sync now merges missing dates from a device cache instead of replacing the entire remote history with a partial snapshot.
-- Empty Upper/Lower routine arrays no longer erase routines already saved in shared storage. The Log tab already follows the planned day type; restored Upper/Lower routines now appear there once recovered data is loaded.
-- Added restore.html with recovered workout history and exercise routines through November 1, 2026. After deploying this package, open /restore.html on the site and select Restore recovered data. Existing later planned dates are kept; existing same-date server records take precedence.
-- Preserved the v57 consecutive three-day PT rotation.
-
-Known limit: app data is stored in one shared snapshot. v58 protects dates missing from a partial snapshot, but conflicting edits to the same date on two devices are still last-write-wins.
-
-v60: Cleared all existing Exercise Bank Day assignments once when the upgraded app loads, and starter bank entries begin unassigned. Day assignments remain saved in the bank until changed or cleared. Choosing a day type in Planning copies the currently assigned bank exercises into that date's Log list. Planning also offers every bank exercise as a direct Primary activity, independent of its Day assignment. The Log uses date-specific planned lists so changing the current plan does not rewrite another date's list. Before replacing a plan list, completed exercise definitions and their assignment labels are snapshotted with that date's completion data; History continues to show the original date, exercise details, measurements, and workout day. The same bank picker is available for direct logging and finishers; multiple finishers remain individually removable. Version and offline cache updated to v60.
-
-v61: Reapplies the one-time Exercise Bank assignment reset with a v61 migration key, so browsers that already opened v60 have every bank Day assignment cleared on upgrade. It merges local and synced bank entries before clearing assignments, preserving every bank exercise. The reset remains pending until the cleared bank syncs successfully; afterward, manual Day assignments persist until changed or cleared. Bank exercises remain available for any Primary, Log entry, or finisher regardless of Day assignment. A bank exercise chosen as Level Up in Planning is added to that date's Additional Activities / Finishers in Log without marking it complete; it can be removed individually. Existing finishers remain in place. Completed exercise definitions are snapshotted before plan replacement or removal so History retains their original date, details, and measurements. App version and offline cache updated to v61.
-
-v62: Clears all existing Exercise Bank Day assignments once on upgrade with a new v62 migration key, preserving all bank entries. The Add Exercise dialog now separates the optional Exercise Bank Day assignment (including Unassigned) from the dated Log destination. New exercises start Unassigned; selecting Unassigned clears the bank assignment while the exercise can still be placed directly into any Log list. The bank manager explains that assignments only control automatic Planning population and that unassigned exercises remain available for direct logging and finishers. Planning continues to populate only exercises assigned to the selected day. Version and offline cache updated to v62.
-
-v63: Removed the separate Log destination selector from Add Exercise. Adding from the primary Log list now uses the activity selected in Planning; the Add Activity / Finisher action continues to add to the finisher list. The optional Exercise Bank Day assignment remains separate and controls only automatic Planning population. Any bank exercise can still be selected directly regardless of assignment. Version, asset references, and offline cache updated to v63.
-
-v64: A Level Up bank selection now reuses the matching activity already planned for that date instead of creating a second copy. The Log suppresses duplicate same-name activities across primary and finisher lists, At a Glance and Assign Classes show one activity row per exercise name, and Add Exercise prevents adding a second same-date copy. Assign Classes now offers a per-date Remove class assignment action; it removes the date's class links while retaining the exercise, completed workout data, and saved class in the library. Version, asset references, and offline cache updated to v64.
-
-v65: Clear the entire Exercise Bank once after merging local and remote data, then retry until the cleared bank syncs. Do not seed starter entries again. A shared reset marker makes the reset apply once across devices; after it is recorded, older clients cannot restore their stale bank snapshot. The user can then add bank entries back. Dated Log entries, completed history, routines, and class records are not part of the bank reset.
-
-v66: Preserve multiple class assignments attached to one same-name activity. At a Glance shows the activity once with all distinct class records; Assign Classes shows each saved class assignment separately and allows removing or editing each one individually. This avoids losing class details while keeping the activity from appearing multiple times.
-
-v67: Add Exercise duplicate detection now checks the selected date's visible Primary and finisher Log lists, matching the lists rendered to the user. Inactive or stale saved list data for another activity type no longer blocks an addition. Existing stored data is not rewritten. Updated app and offline cache version.
-
-v68: Removed the Exercise Tracker's Body Progress page, navigation link, service-worker cache entry, and dedicated /api/body function. Moved its strength-training history table into the existing Progress tab, with an exercise filter above the table; the existing individual exercise progress charts remain below. Strength history continues to read the Exercise Tracker's existing /api/data-backed workout records. No Health Tracker files, data, or services are changed. No Body Progress local or remote data is deleted. App and offline cache version updated to v68.
-
-VERSION 69
-Routine definitions now persist for all exercise-based day types and finisher lists. The saved routine is the default edit target; a compact Log control switches changes to the current workout only. A dated workout's exercise-list configuration is snapshotted when its first set is logged, so later routine edits affect future workouts without rewriting the current/previous workout. Existing completed date lists are retained during migration.
-
-The former Circuit grouping is presented as Superset. A superset can be saved to a routine or created for one workout; members remain independently tracked and cannot belong to multiple groups. Entire supersets can be moved together. A saved superset can be separated for the current workout without changing the saved grouping. No in-app rest timers or prompts are included; use the Apple Watch for rest timing.
-
-Exercise cards include substitution controls for temporary replacements or remembered alternatives. Removal offers separate choices for this workout, the saved routine, archiving from Exercise Bank, or permanently deleting from Exercise Bank. Archiving/deleting a bank item does not silently remove it from existing routines or historical records.
-
-History includes full JSON Backup / Restore. Backups include library routines and order, supersets, workout logs/history, Exercise Bank, classes, day designations, and marathon data. Restore replaces the current dataset after confirmation to avoid duplicate records. The existing per-set entry model continues to save entered data; unfinished sets are not auto-completed.
-
-VERSION 70 — Strength block (November 23, 2026–January 1, 2027)
-- Added Upper A, Upper B, Lower A, and Lower B as separate selectable workout day types using the existing routine-template and dated workout snapshot system.
-- Seeded machine-focused starter routines only where a corresponding routine is empty. Existing non-empty user routines are preserved. The starter order prioritizes compound/multi-joint machine movements before smaller isolation work.
-- Lower routines include leg press, leg extension, hip thrust, leg curl, and hip abduction. No calf raises are included. Leg press remains subject to the user's PT-approved range and technique.
-- Upper routines use machine chest press, rows, pulldowns, shoulder press, reverse pec deck/lateral raise, biceps and triceps. No cable exercises are included.
-- Dedicated gym core exercises are omitted; the user's preferred core training is Apple Fitness+ Core classes.
-- Added a contextual optional-cardio note to Upper/Lower workout days. It suggests comfortable cycling choices, notes that lap swimming is separate and Saturday swimming is avoided, and defers to PT/Achilles symptoms and recovery. Existing Add Activity / Finisher logging remains the way to record completed cardio.
-- Added the four strength day types to weekly planning and mapped Upper A/B and Lower A/B into the existing weekly Upper/Lower balance categories.
-- Retained existing swim, elliptical, PT/Achilles, Pilates, marathon, history, progress, backup/restore, and sync features. No new duplicate activity trackers were added.
-- Updated app, stylesheet references, and service-worker cache to v70.
-- The strength block is a set of editable routine templates; the user can assign dates in the existing Plan tab. Existing dated logs and completed workout snapshots are not rewritten.
-
-Safety note: New or changed lower-body exercises should be reviewed against the user's current PT instructions. No calf raises are prescribed. Cardio suggestions are optional and must yield to Achilles symptoms and PT guidance.
+VALIDATION
+- JavaScript syntax checked with Node.js.
+- ZIP integrity checked after packaging.
+- Browser interaction, live Netlify deployment, remote sync against the user's account, and cross-device behavior have not been exercised in this build environment.

@@ -231,6 +231,7 @@ body {
 .ex-move-up-btn,
 .ex-move-down-btn,
 .ex-edit-btn,
+.ex-substitute-btn,
 .ex-delete-btn {
   background: transparent;
   border: 1.5px solid var(--border);
@@ -1153,3 +1154,46 @@ select {
 .bank-designation-actions{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
 .bank-designation-actions button{width:auto;margin:0;padding:7px 10px}
 
+
+/* Version 69: compact routine scope and superset controls */
+.routine-scope-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  color: var(--muted, #777);
+  font-size: 12px;
+  font-weight: 600;
+}
+.routine-scope-control select {
+  min-height: 36px;
+  max-width: 190px;
+  padding: 6px 28px 6px 9px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 9px;
+  background: var(--card, #fff);
+  color: inherit;
+  font: inherit;
+}
+.superset-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.superset-actions button { min-height:34px; padding:6px 9px; }
+.superset-move-up-btn, .superset-move-down-btn {
+  border:1px solid var(--border, #ddd); border-radius:8px; background:transparent; color:inherit;
+}
+.ex-substitute-btn { min-width:34px; }
+.finisher-group-btn { margin: 8px 8px 8px 0; }
+.circuit-header { gap:8px; flex-wrap:wrap; }
+@media (max-width: 480px) {
+  .routine-scope-control { width:100%; justify-content:space-between; }
+  .routine-scope-control select { flex:1; }
+  .superset-actions { width:100%; }
+  .superset-actions .circuit-ungroup-btn { margin-left:auto; }
+}
+.bank-archived-label { display:inline-block; margin-left:6px; padding:2px 6px; border-radius:6px; font-size:10px; font-weight:700; background:rgba(120,120,120,.12); color:var(--muted,#777); vertical-align:middle; }
+.bank-row-delete-btn { min-width:72px; min-height:36px; padding:7px 10px; }
+
+/* Inside a superset, move controls act on the whole group from its header. */
+.circuit-card .ex-move-up-btn,
+.circuit-card .ex-move-down-btn { display:none; }
+
+.routine-save-notice { margin:0 0 10px; padding:9px 12px; border-radius:9px; background:rgba(110,130,100,.10); color:var(--text,#333); font-size:12px; line-height:1.4; }

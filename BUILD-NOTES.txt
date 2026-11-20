@@ -53,3 +53,12 @@ v66: Preserve multiple class assignments attached to one same-name activity. At 
 v67: Add Exercise duplicate detection now checks the selected date's visible Primary and finisher Log lists, matching the lists rendered to the user. Inactive or stale saved list data for another activity type no longer blocks an addition. Existing stored data is not rewritten. Updated app and offline cache version.
 
 v68: Removed the Exercise Tracker's Body Progress page, navigation link, service-worker cache entry, and dedicated /api/body function. Moved its strength-training history table into the existing Progress tab, with an exercise filter above the table; the existing individual exercise progress charts remain below. Strength history continues to read the Exercise Tracker's existing /api/data-backed workout records. No Health Tracker files, data, or services are changed. No Body Progress local or remote data is deleted. App and offline cache version updated to v68.
+
+VERSION 69
+Routine definitions now persist for all exercise-based day types and finisher lists. The saved routine is the default edit target; a compact Log control switches changes to the current workout only. A dated workout's exercise-list configuration is snapshotted when its first set is logged, so later routine edits affect future workouts without rewriting the current/previous workout. Existing completed date lists are retained during migration.
+
+The former Circuit grouping is presented as Superset. A superset can be saved to a routine or created for one workout; members remain independently tracked and cannot belong to multiple groups. Entire supersets can be moved together. A saved superset can be separated for the current workout without changing the saved grouping. No in-app rest timers or prompts are included; use the Apple Watch for rest timing.
+
+Exercise cards include substitution controls for temporary replacements or remembered alternatives. Removal offers separate choices for this workout, the saved routine, archiving from Exercise Bank, or permanently deleting from Exercise Bank. Archiving/deleting a bank item does not silently remove it from existing routines or historical records.
+
+History includes full JSON Backup / Restore. Backups include library routines and order, supersets, workout logs/history, Exercise Bank, classes, day designations, and marathon data. Restore replaces the current dataset after confirmation to avoid duplicate records. The existing per-set entry model continues to save entered data; unfinished sets are not auto-completed.

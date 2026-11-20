@@ -1,3 +1,7 @@
-Toni's Total Training Tracker v66
+Toni's Total Training Tracker — Version 69
 
-Deploy the contents of this package to the existing site. After deployment, open https://exerciseplanneram.netlify.app/restore.html and select “Restore recovered data” once. This restores recovered workout history and Upper/Lower exercise routines through November 1, 2026, while retaining the current later planned dates. Then reload the tracker on your devices.
+Deploy the entire contents of this package to the existing Netlify site. Include the updated netlify/functions/data.js function as well as the static files; Version 69 uses the existing /api/data endpoint and adds explicit full-dataset replacement support for restoring a complete JSON backup.
+
+After deployment, reload the tracker. The app and service-worker asset references use v69 so browsers will refresh the updated files. There is no need to run restore.html for this upgrade; that page is retained only for the earlier one-time recovered-history restoration.
+
+Before making changes on multiple devices, allow each device to finish syncing. Version 69 routine templates, dated workout snapshots, supersets, and backups are synchronized through the existing Netlify Blobs store.

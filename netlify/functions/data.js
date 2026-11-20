@@ -31,13 +31,16 @@ export default async (req) => {
       });
     }
     const previous = await store.get(KEY, { type: "json" });
+    const replaceAll = body.replaceAll === true;
     const previousLibrary = previous?.library || {};
     const incomingLibrary = body.library || {};
-    const library = { ...previousLibrary, ...incomingLibrary };
+    const library = replaceAll ? { ...incomingLibrary } : { ...previousLibrary, ...incomingLibrary };
     // Do not let an empty/stale browser snapshot erase shared routines.
-    for (const [key, list] of Object.entries(previousLibrary)) {
-      if (Array.isArray(list) && list.length && Array.isArray(incomingLibrary[key]) && incomingLibrary[key].length === 0) {
-        library[key] = list;
+    if (!replaceAll) {
+      for (const [key, list] of Object.entries(previousLibrary)) {
+        if (Array.isArray(list) && list.length && Array.isArray(incomingLibrary[key]) && incomingLibrary[key].length === 0) {
+          library[key] = list;
+        }
       }
     }
     const previousBankResetVersion = Number(previous?.bankResetVersion || 0);
@@ -45,23 +48,29 @@ export default async (req) => {
     const bankResetVersion = Math.max(previousBankResetVersion, incomingBankResetVersion);
     // Version 65 submits the rebuilt bank as the authoritative replacement.
     // Thereafter, older clients cannot repopulate the deleted bank snapshot.
-    const bank = incomingBankResetVersion >= 65
+    const bank = replaceAll
       ? { ...(body.bank || {}) }
-      : (previousBankResetVersion >= 65
-        ? (previous?.bank || {})
-        : { ...(previous?.bank || {}), ...(body.bank || {}) });
+      : incomingBankResetVersion >= 65
+        ? { ...(body.bank || {}) }
+        : (previousBankResetVersion >= 65
+          ? (previous?.bank || {})
+          : { ...(previous?.bank || {}), ...(body.bank || {}) });
     const toSave = {
       library,
-      // Merge by date so a device with a partial cache cannot wipe other days
-      // from shared storage. Newer edits for a date still replace that date.
-      logs: { ...(previous?.logs || {}), ...(body.logs || {}) },
+      // Merge by date during ordinary sync so a partial cache cannot wipe
+      // history. An explicit backup restore replaces the full dated dataset.
+      logs: replaceAll ? (body.logs || {}) : { ...(previous?.logs || {}), ...(body.logs || {}) },
       bank,
       bankResetVersion,
-      classes: Array.isArray(body.classes) && body.classes.length
-        ? body.classes
-        : (previous?.classes || body.classes || []),
-      marathon: body.marathon || previous?.marathon || null,
-      dayDesignations: Array.isArray(body.dayDesignations) ? body.dayDesignations : (previous?.dayDesignations || []),
+      classes: replaceAll
+        ? (Array.isArray(body.classes) ? body.classes : [])
+        : Array.isArray(body.classes) && body.classes.length
+          ? body.classes
+          : (previous?.classes || body.classes || []),
+      marathon: replaceAll ? (body.marathon || null) : (body.marathon || previous?.marathon || null),
+      dayDesignations: replaceAll
+        ? (Array.isArray(body.dayDesignations) ? body.dayDesignations : [])
+        : Array.isArray(body.dayDesignations) ? body.dayDesignations : (previous?.dayDesignations || []),
       updatedAt: new Date().toISOString(),
     };
     await store.setJSON(KEY, toSave);

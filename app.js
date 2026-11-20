@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v68";
+const APP_VERSION = "v69";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -69,46 +69,95 @@ function listLabel(listKey) {
   return DAYS.find((d) => d.id === listKey)?.label || listKey;
 }
 
-// Only Upper and Lower are shared across every date of that type — that's
-// correct for strength training, where you want the same exercise list with
-// progressing weights across sessions. Everything else (Core, Mobility,
-// Cardio, and every finisher list) is scoped to the specific calendar date —
-// removing "Walking Outside" from Sept 4th's Cardio must never remove it
-// from Sept 1st's Cardio too.
-const SHARED_LIST_TYPES = new Set(["upper", "lower"]);
-function isSharedList(listKey) {
-  return SHARED_LIST_TYPES.has(listKey);
-}
-
+// Legacy classification retained for older progression paths. Version 69
+// stores reusable routine templates for every loggable day type and finisher.
 // Reads/writes the correct exercise list for a given date + list key,
 // transparently routing shared types (Upper/Lower) to the library and
 // everything else to that specific date's own storage.
 function getExerciseList(date, listKey) {
-  const perDate = logs[date]?.lists?.[listKey];
-  if (Array.isArray(perDate) && (logs[date]?.planListKeys || []).includes(listKey)) return perDate;
-  if (isSharedList(listKey)) return library[listKey] || [];
-  if (Array.isArray(perDate)) return perDate;
-  // Fallback for exercises added before per-date lists existed — shown as a
-  // starting point on any date that hasn't been individually modified yet.
-  // The moment this date's list is changed, it gets saved as its own
-  // independent copy and stops being affected by (or affecting) other dates.
-  return library[listKey] || [];
+  const dayLog = logs[date];
+  const perDate = dayLog?.lists?.[listKey];
+  // A date-specific override is used only when the user explicitly chooses
+  // "this workout only", or when an already-started workout is frozen.
+  if (dayLog?.routineOverrides?.[listKey] && Array.isArray(perDate)) return perDate;
+  if (Array.isArray(library[listKey])) return library[listKey];
+  return Array.isArray(perDate) ? perDate : [];
 }
-function setExerciseList(date, listKey, list) {
-  if (isSharedList(listKey) && !(logs[date]?.planListKeys || []).includes(listKey)) {
-    library[listKey] = list;
-    saveLibrary(library);
+function setExerciseList(date, listKey, list, scope = (state?.editScope || "routine")) {
+  if (!logs[date]) logs[date] = { dayId: listKey.replace(/_finisher$/, ""), entries: {} };
+  const dayLog = logs[date];
+  if (scope === "today") {
+    dayLog.lists ||= {};
+    dayLog.routineOverrides ||= {};
+    dayLog.lists[listKey] = list;
+    dayLog.routineOverrides[listKey] = true;
+    saveLogs(logs);
     return;
   }
-  if (!logs[date]) logs[date] = { dayId: listKey.replace(/_finisher$/, ""), entries: {} };
-  if (!logs[date].lists) logs[date].lists = {};
-  logs[date].lists[listKey] = list;
+  // Preserve historical exercise definitions before changing a shared
+  // routine. This matters for dates whose old Upper/Lower lists were shared
+  // rather than copied into the dated log.
+  const baseDayId = listKey.replace(/_finisher$/, "");
+  for (const [loggedDate, historicalDay] of Object.entries(logs)) {
+    if (historicalDay?.dayId !== baseDayId || !dayLogHasRealData(historicalDay, loggedDate)) continue;
+    preserveCompletedExerciseDetails(loggedDate);
+    if (!historicalDay.routineOverrides?.[listKey]) {
+      historicalDay.lists ||= {};
+      historicalDay.routineOverrides ||= {};
+      historicalDay.lists[listKey] = getExerciseList(loggedDate, listKey).map(e => ({...e}));
+      historicalDay.routineOverrides[listKey] = true;
+    }
+  }
+  // If this workout has already been logged, preserve the exact list it
+  // started with. The revised template applies to future workouts.
+  if (dayLogHasRealData(dayLog, date)) {
+    state.routineNotice = "Saved routine updated for future workouts. This workout keeps the version it started with.";
+  }
+  if (dayLogHasRealData(dayLog, date) && !dayLog.routineOverrides?.[listKey]) {
+    dayLog.lists ||= {};
+    dayLog.routineOverrides ||= {};
+    dayLog.lists[listKey] = getExerciseList(date, listKey).map(e => ({...e}));
+    dayLog.routineOverrides[listKey] = true;
+  } else if (!dayLogHasRealData(dayLog, date) && dayLog.routineOverrides) {
+    delete dayLog.routineOverrides[listKey];
+    if (dayLog.lists) delete dayLog.lists[listKey];
+  }
+  library[listKey] = list;
+  saveLibrary(library);
   saveLogs(logs);
 }
 
-// No preloaded exercises — starts empty, everything added via the + button.
-// Only the two shared (strength) types live here now; Core/Mobility/Cardio
-// and finishers are stored per-date instead (see getExerciseList above).
+// Upgrade legacy date-specific exercise lists into reusable routine templates.
+// Completed historical dates remain frozen as snapshots; unstarted dates use
+// the reusable template so future workouts inherit the saved order.
+function migrateRoutineTemplates() {
+  const keys = new Set([...DAYS.filter(d => d.loggable).map(d => d.id), ...DAYS.filter(d => d.loggable).map(d => finisherKey(d.id)), ...Object.keys(library)]);
+  let libraryChanged = false, logsChanged = false;
+  for (const key of keys) {
+    if (Array.isArray(library[key]) && library[key].length) continue;
+    const candidates = Object.entries(logs).filter(([, day]) => Array.isArray(day?.lists?.[key]) && day.lists[key].length).sort((a,b) => a[0].localeCompare(b[0]));
+    if (candidates.length) {
+      // Latest known configuration is the best available starting template.
+      library[key] = candidates[candidates.length - 1][1].lists[key].map(e => ({...e}));
+      libraryChanged = true;
+    }
+  }
+  for (const [date, day] of Object.entries(logs)) {
+    for (const [key, list] of Object.entries(day.lists || {})) {
+      if (!Array.isArray(list) || !list.length) continue;
+      if (dayLogHasRealData(day, date)) {
+        day.routineOverrides ||= {};
+        if (!day.routineOverrides[key]) { day.routineOverrides[key] = true; logsChanged = true; }
+      }
+    }
+  }
+  if (libraryChanged) saveLibrary(library);
+  if (logsChanged) saveLogs(logs);
+  return libraryChanged || logsChanged;
+}
+
+// Strength routine keys are initialized here. Other day-type and finisher
+// templates are added to this same library as the user creates them.
 const DEFAULT_LIBRARY = { upper: [], lower: [] };
 
 const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
@@ -317,6 +366,8 @@ function upsertBank(ex) {
     weights: ex.weights ? [...ex.weights] : [20, 20, 20],
     targets: Array.isArray(ex.targets) ? [...ex.targets] : null,
     customUnit: ex.customUnit || null,
+    alternatives: Array.isArray(ex.alternatives) ? [...ex.alternatives] : (bank[key]?.alternatives || []),
+    archived: Object.prototype.hasOwnProperty.call(ex, "archived") ? !!ex.archived : !!bank[key]?.archived,
     dayDesignation: Object.prototype.hasOwnProperty.call(ex, "dayDesignation")
       ? (ex.dayDesignation || "")
       : (bank[key]?.dayDesignation || ""),
@@ -331,6 +382,7 @@ function upsertBank(ex) {
 const REMOTE_ENDPOINT = "/api/data";
 let pushTimer = null;
 let pushChain = Promise.resolve(); // serialize writes so an older in-flight push cannot finish last
+let forceRemoteReplace = false; // set only by an explicit full-backup restore
 let suppressPush = false; // true while applying a just-pulled remote copy, so we don't immediately push it back
 
 async function pullRemote(isInitial) {
@@ -403,6 +455,7 @@ async function pullRemote(isInitial) {
         : { ...localBankBeforePull, ...(remote.bank || {}) };
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
+      if (migrateRoutineTemplates()) repairRemoteWorkoutData = true;
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
         // An older backend or stale/empty remote payload must not wipe classes
         // already stored on this device. Preserve them and repair remote below.
@@ -466,11 +519,13 @@ function pushRemote() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ library, logs, bank, marathon, classes, dayDesignations,
+          replaceAll: forceRemoteReplace,
           bankResetVersion: localStorage.getItem(LS_V65_BANK_RESET) ? 65 : 0 }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
       if (localStorage.getItem(LS_V62_BANK_RESET) === "pending") localStorage.setItem(LS_V62_BANK_RESET, "done");
       if (localStorage.getItem(LS_V65_BANK_RESET) === "pending") localStorage.setItem(LS_V65_BANK_RESET, "done");
+      if (forceRemoteReplace) forceRemoteReplace = false;
       setSyncStatus("synced");
       return true;
     } catch (e) {
@@ -496,6 +551,8 @@ let state = {
   selectedDate: todayISO(),
   selectedDayId: null,
   progressExId: null,
+  editScope: "routine",
+  routineNotice: "",
   runCalIdx: null, // which calendar week the Run tab is showing (null = current)
 };
 
@@ -742,6 +799,7 @@ const SYNC_LABELS = {
   error: { text: "● Sync error — saved locally", cls: "offline" },
 };
 let syncStatus = "idle";
+migrateRoutineTemplates();
 
 function renderHeader() {
   const s = SYNC_LABELS[syncStatus];
@@ -793,7 +851,7 @@ function weekPrimaryOptions() {
     const value = day.primaryValue || day.id;
     if (!included.has(value)) { options.push([value, day.label]); included.add(value); }
   });
-  Object.entries(bank).sort((a,b) => a[1].name.localeCompare(b[1].name)).forEach(([key,entry]) => {
+  Object.entries(bank).filter(([,entry]) => !entry?.archived).sort((a,b) => a[1].name.localeCompare(b[1].name)).forEach(([key,entry]) => {
     if (entry?.name) options.push([`bank-primary:${key}`, entry.name]);
   });
   return options;
@@ -830,10 +888,10 @@ function planOptionsHTML(options, selected, includeExerciseBank = false, savedBa
     return html;
   }
   const bankEntries = Object.entries(bank)
-    .filter(([key, entry]) => key && entry?.name)
+    .filter(([key, entry]) => key && entry?.name && !entry?.archived)
     .sort((a,b) => a[1].name.localeCompare(b[1].name));
   const selectedBankKey = shown.startsWith("lu-bank:") ? shown.slice("lu-bank:".length) : "";
-  const selectedBankEntryExists = !!(selectedBankKey && bank[selectedBankKey]?.name);
+  const selectedBankEntryExists = !!(selectedBankKey && bank[selectedBankKey]?.name && !bank[selectedBankKey]?.archived);
   const selectedIsPreset = options.some(([value]) => value === shown);
   if (shown && !selectedBankEntryExists && !selectedIsPreset) {
     const legacyLabel = shown === "lu-marathon"
@@ -875,6 +933,10 @@ function preserveCompletedExerciseDetails(date) {
   const dayLog = logs[date];
   if (!dayLog) return;
   const exerciseMap = allExercises();
+  const activeDayId = dayLog.dayId || "";
+  [activeDayId, activeDayId ? finisherKey(activeDayId) : ""].filter(Boolean).forEach(key => {
+    getExerciseList(date, key).forEach(ex => { if (ex?.id) exerciseMap[ex.id] = ex; });
+  });
   Object.values(dayLog.lists || {}).flat().forEach(ex => { if (ex?.id) exerciseMap[ex.id] = ex; });
   dayLog.completedExercises ||= {};
   Object.entries(dayLog.entries || {}).forEach(([id, entry]) => {
@@ -894,13 +956,20 @@ function populatePlannedExercises(date, primary) {
     const one = bankExerciseForPlan(primary.slice("bank-primary:".length));
     assigned = one ? [one] : [];
   } else {
-    assigned = Object.entries(bank).filter(([,entry]) => entry?.dayDesignation === dayId)
+    assigned = Object.entries(bank).filter(([,entry]) => !entry?.archived && entry?.dayDesignation === dayId)
       .sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key]) => bankExerciseForPlan(key)).filter(Boolean);
   }
-  dayLog.lists ||= {};
-  dayLog.planListKeys ||= [];
-  if (!dayLog.planListKeys.includes(dayId)) dayLog.planListKeys.push(dayId);
-  dayLog.lists[dayId] = assigned;
+  // Planning selects a routine; it does not replace the user's saved order.
+  // Newly assigned bank exercises are appended to the template, preserving
+  // the user's existing order and any manually added exercises.
+  const template = Array.isArray(library[dayId]) ? [...library[dayId]] : [];
+  const existingNames = new Set(template.map(ex => bankKey(ex.name || "")));
+  let templateChanged = !Array.isArray(library[dayId]);
+  assigned.forEach(ex => {
+    const key = bankKey(ex.name || "");
+    if (key && !existingNames.has(key)) { template.push(ex); existingNames.add(key); templateChanged = true; }
+  });
+  if (templateChanged) setExerciseList(date, dayId, template, "routine");
   if (!dayLogHasRealData(dayLog,date)) dayLog.dayId = dayId;
 }
 function syncPlannedLevelUpActivity(date) {
@@ -915,7 +984,7 @@ function syncPlannedLevelUpActivity(date) {
     preserveCompletedExerciseDetails(date);
     const oldIsOwned = plan.levelupExerciseOwned === true || (plan.levelupExerciseOwned == null && oldId.startsWith("levelup_") && oldListKey.endsWith("_finisher"));
     if (oldIsOwned && !entryHasData(dayLog.entries?.[oldId])) {
-      setExerciseList(date, oldListKey, getExerciseList(date, oldListKey).filter(ex => ex.id !== oldId));
+      setExerciseList(date, oldListKey, getExerciseList(date, oldListKey).filter(ex => ex.id !== oldId), "today");
     }
     delete plan.levelupExerciseId;
     delete plan.levelupExerciseKey;
@@ -952,7 +1021,7 @@ function syncPlannedLevelUpActivity(date) {
   if (!exercise) return;
   const id = `levelup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
   exercise.id = id;
-  setExerciseList(date, targetListKey, [...getExerciseList(date, targetListKey), exercise]);
+  setExerciseList(date, targetListKey, [...getExerciseList(date, targetListKey), exercise], "today");
   plan.levelupExerciseId = id;
   plan.levelupExerciseKey = bankKeyValue;
   plan.levelupExerciseListKey = targetListKey;
@@ -1020,6 +1089,7 @@ function renderActivityDateBar() {
   bar.appendChild(renderDateButton(state.selectedDate, (iso) => {
     state.selectedDate = iso;
     state.selectedDayId = null;
+    state.editScope = "routine";
     render();
   }, "log-activity-date-btn"));
   return bar;
@@ -1045,7 +1115,7 @@ function renderWeeklyPlan() {
     const hasCompleted = dayLogHasRealData(logs[date],date) || runHasData(runRecord(date));
     const status = card.querySelector(".log-week-day-status");
     status.textContent = hasCompleted ? (hasPlan ? "Planned · logged" : "Logged") : hasPlan ? "Planned" : "";
-    card.querySelector(".log-week-open").onclick = () => { state.selectedDate = date; state.selectedDayId = null; state.tab = "today"; render(); window.scrollTo({top:0,behavior:"smooth"}); };
+    card.querySelector(".log-week-open").onclick = () => { state.selectedDate = date; state.selectedDayId = null; state.editScope = "routine"; state.tab = "today"; render(); window.scrollTo({top:0,behavior:"smooth"}); };
     const primary = card.querySelector(".log-plan-primary"), levelup = card.querySelector(".log-plan-levelup");
     primary.innerHTML = planOptionsHTML(weekPrimaryOptions(), plan.primary || "", false, "", plan.primaryName || "");
     levelup.innerHTML = planOptionsHTML(WEEK_LEVELUP_OPTIONS, plan.levelup || "", true, plan.levelupName || "");
@@ -1233,7 +1303,7 @@ function renderDayOverview() {
   hero.querySelector(".overview-quote").textContent = `“${overviewQuote(date)}”`;
   const dateTools = hero.querySelector(".overview-date-tools");
   dateTools.appendChild(renderOverviewModeToggle("day"));
-  dateTools.appendChild(renderDateButton(date, iso => { state.selectedDate = iso; state.selectedDayId = null; render(); }, "overview-date"));
+  dateTools.appendChild(renderDateButton(date, iso => { state.selectedDate = iso; state.selectedDayId = null; state.editScope = "routine"; render(); }, "overview-date"));
   wrap.appendChild(hero);
 
   const grid = el(`<div class="overview-grid"><div class="overview-main"></div><aside class="overview-side"></aside></div>`);
@@ -1297,11 +1367,11 @@ function renderWeekOverview() {
   top.querySelector(".week-overview-range").textContent = overviewWeekRange(weekStart);
   const controls = top.querySelector(".week-overview-controls");
   controls.appendChild(renderOverviewModeToggle("week"));
-  const moveWeek = (amount) => { state.selectedDate = addDaysIso(weekStart, amount * 7); render(); };
+  const moveWeek = (amount) => { state.selectedDate = addDaysIso(weekStart, amount * 7); state.editScope = "routine"; render(); };
   const previous = el(`<button type="button" class="week-overview-nav" aria-label="Previous week">‹</button>`);
   previous.onclick = () => moveWeek(-1);
   const choose = el(`<button type="button" class="week-overview-choose">Choose week</button>`);
-  choose.onclick = () => openDatePickerModal(state.selectedDate, iso => { state.selectedDate = iso; render(); });
+  choose.onclick = () => openDatePickerModal(state.selectedDate, iso => { state.selectedDate = iso; state.editScope = "routine"; render(); });
   const next = el(`<button type="button" class="week-overview-nav" aria-label="Next week">›</button>`);
   next.onclick = () => moveWeek(1);
   const print = el(`<button type="button" class="week-overview-print">Print</button>`);
@@ -1415,6 +1485,17 @@ function renderToday() {
   const current = selectedDayInfo();
   const header = el(`<div class="day-header"><div class="day-name">${current ? current.label : "No activity planned"}</div></div>`);
   wrap.appendChild(header);
+  if (current && current.id !== "rest") {
+    const scopeWrap = el(`<label class="routine-scope-control">Changes apply to <select aria-label="Editing scope"><option value="routine">Saved routine</option><option value="today">This workout only</option></select></label>`);
+    const scopeSelect = scopeWrap.querySelector("select");
+    scopeSelect.value = state.editScope || "routine";
+    scopeSelect.onchange = () => { state.editScope = scopeSelect.value; };
+    wrap.appendChild(scopeWrap);
+    if (state.routineNotice) {
+      wrap.appendChild(el(`<div class="routine-save-notice">${safeText(state.routineNotice)}</div>`));
+      state.routineNotice = "";
+    }
+  }
   wrap.appendChild(renderDayClassSection(state.selectedDate));
 
   // Marathon plan: today's prescribed run (if the plan is set up and this
@@ -1472,7 +1553,7 @@ function renderToday() {
   actionRow.appendChild(summaryBtn);
 
   if (dayExercises.filter((e) => !e.groupId).length >= 2) {
-    const groupBtn = el(`<button class="group-btn">🔗 Group into Circuit</button>`);
+    const groupBtn = el(`<button class="group-btn">🔗 Create Superset</button>`);
     groupBtn.onclick = () => openGroupModal(current.id);
     actionRow.appendChild(groupBtn);
   }
@@ -1529,7 +1610,7 @@ function renderPlanNote(date) {
 }
 
 // A finisher list works exactly like a primary day's exercises — same
-// cards, same Add Exercise modal (bank included), same edit/delete/circuit
+// cards, same Add Exercise modal (bank included), same edit/delete/superset
 // grouping — just stored under its own key and shown in a separate section.
 // sharedTabCursor continues the SAME tabindex sequence as the primary list
 // above it — using a fresh cursor here would hand out duplicate tabindex
@@ -1557,6 +1638,11 @@ function renderFinisherSection(dayId, todayLog, sharedTabCursor, excludedNames =
     });
   }
 
+  if (finisherExercises.filter(e => !e.groupId).length >= 2) {
+    const groupBtn = el(`<button class="group-btn finisher-group-btn">🔗 Create Superset</button>`);
+    groupBtn.onclick = () => openGroupModal(fKey);
+    wrap.appendChild(groupBtn);
+  }
   const addBtn = el(`<button class="finisher-add-btn">🏃 + Add Activity / Finisher</button>`);
   addBtn.onclick = () => openAddExerciseModal(fKey);
   wrap.appendChild(addBtn);
@@ -1564,7 +1650,7 @@ function renderFinisherSection(dayId, todayLog, sharedTabCursor, excludedNames =
   return wrap;
 }
 
-// Groups exercises sharing a groupId into one combined "circuit" render item,
+// Groups exercises sharing a groupId into one combined superset render item,
 // preserving first-appearance order; everything else renders solo as before.
 function buildRenderPlan(dayExercises) {
   const plan = [];
@@ -1596,8 +1682,8 @@ function renderCircuitCard(members, groupId, tabCursor, todayLog, dayId) {
   const wrapper = el(`
     <div class="circuit-card">
       <div class="circuit-header">
-        <span class="circuit-label">🔗 Circuit · ${members.length} exercises</span>
-        <button class="circuit-ungroup-btn">Ungroup</button>
+        <span class="circuit-label">🔗 Superset · ${members.length} exercises</span>
+        <div class="superset-actions"><button class="superset-move-up-btn" title="Move entire superset up">▲</button><button class="superset-move-down-btn" title="Move entire superset down">▼</button><button class="circuit-ungroup-btn">Separate for this workout</button></div>
       </div>
     </div>
   `);
@@ -1607,17 +1693,20 @@ function renderCircuitCard(members, groupId, tabCursor, todayLog, dayId) {
     const blockSize = sets.length * (ex.trackType === "weight" ? 2 : 1);
     wrapper.appendChild(renderExerciseCard(ex, sets, tabCursor.next(blockSize), dayId));
   });
-  wrapper.querySelector(".circuit-ungroup-btn").onclick = () => ungroupCircuit(dayId, groupId);
+  wrapper.querySelector(".circuit-ungroup-btn").onclick = () => ungroupCircuit(dayId, groupId, true);
+  wrapper.querySelector(".superset-move-up-btn").onclick = () => moveExerciseInList(dayId, members[0].id, -1);
+  wrapper.querySelector(".superset-move-down-btn").onclick = () => moveExerciseInList(dayId, members[0].id, 1);
   return wrapper;
 }
 
-function ungroupCircuit(listKey, groupId) {
-  if (!confirm("Ungroup this circuit? The exercises stay — they just won't be linked together anymore.")) return;
+function ungroupCircuit(listKey, groupId, temporary = false) {
   const date = state.selectedDate;
-  const list = getExerciseList(date, listKey).map((e) =>
-    e.groupId === groupId ? { ...e, groupId: undefined } : e
-  );
-  setExerciseList(date, listKey, list);
+  if (!confirm(temporary
+    ? "Separate this superset for this workout only? Your saved superset will remain unchanged."
+    : "Remove this superset grouping from the saved routine?")) return;
+  const list = getExerciseList(date, listKey).map((e) => e.groupId === groupId ? { ...e, groupId: undefined } : e);
+  state.editScope = temporary ? "today" : "routine";
+  setExerciseList(date, listKey, list, state.editScope);
   render();
 }
 
@@ -1630,19 +1719,20 @@ function openGroupModal(dayId) {
   const dayExercises = getExerciseList(date, dayId);
   const ungrouped = dayExercises.filter((e) => !e.groupId);
   if (ungrouped.length < 2) {
-    alert("You need at least 2 ungrouped exercises on this day to make a circuit.");
+    alert("You need at least 2 ungrouped exercises in this routine to create a superset.");
     return;
   }
 
   const overlay = el(`<div class="modal-overlay"></div>`);
   const modal = el(`
     <div class="modal">
-      <h3>Group into Circuit</h3>
-      <div class="field-hint" style="margin-bottom:14px;">Pick 2 or more exercises to do back-to-back as one circuit. Add more members later, or ungroup anytime — nothing is permanent.</div>
+      <h3>Create Superset</h3>
+      <div class="field-hint" style="margin-bottom:14px;">Pick 2 or more ungrouped exercises. Each exercise can belong to only one superset. You can save the group with the routine or use it for this workout only.</div>
       <div id="group-check-list" class="check-grid one-col"></div>
       <div class="modal-actions">
         <button class="btn-secondary" id="group-cancel-btn">Cancel</button>
-        <button class="btn-primary" id="group-save-btn">Create Circuit</button>
+        <button class="btn-secondary" id="group-save-today-btn">This workout only</button>
+        <button class="btn-primary" id="group-save-btn">Save to routine</button>
       </div>
     </div>
   `);
@@ -1659,23 +1749,59 @@ function openGroupModal(dayId) {
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) document.body.removeChild(overlay); };
   modal.querySelector("#group-cancel-btn").onclick = () => document.body.removeChild(overlay);
-  modal.querySelector("#group-save-btn").onclick = () => {
+  const saveGroup = (scope) => {
     const selected = [...list.querySelectorAll("input:checked")].map((c) => c.value);
-    if (selected.length < 2) {
-      alert("Pick at least 2 exercises.");
-      return;
-    }
+    if (selected.length < 2) { alert("Pick at least 2 exercises."); return; }
     const groupId = generateGroupId();
-    const updated = getExerciseList(date, dayId).map((e) =>
-      selected.includes(e.id) ? { ...e, groupId } : e
-    );
-    setExerciseList(date, dayId, updated);
+    const updated = getExerciseList(date, dayId).map((e) => selected.includes(e.id) ? { ...e, groupId } : e);
+    state.editScope = scope;
+    setExerciseList(date, dayId, updated, scope);
     document.body.removeChild(overlay);
     render();
   };
+  modal.querySelector("#group-save-btn").onclick = () => saveGroup("routine");
+  modal.querySelector("#group-save-today-btn").onclick = () => saveGroup("today");
 
   document.body.appendChild(overlay);
   trapFocus(overlay);
+}
+
+function openSubstituteModal(dayId, exId) {
+  const date = state.selectedDate;
+  const current = getExerciseList(date, dayId).find(e => e.id === exId);
+  if (!current) return;
+  const options = Object.entries(bank).filter(([key, entry]) => !entry?.archived && key !== bankKey(current.name || ""));
+  if (!options.length) { alert("Add another exercise to the Exercise Bank before substituting."); return; }
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`<div class="modal"><h3>Substitute ${safeText(current.name)}</h3>
+    <div class="form-row"><label for="substitute-choice">Replacement exercise</label><select id="substitute-choice"></select></div>
+    <div class="field-hint">Use the replacement for this workout, or remember it as an alternative to the original exercise.</div>
+    <div class="modal-actions"><button class="btn-secondary" id="sub-cancel">Cancel</button><button class="btn-secondary" id="sub-once">Use this workout</button><button class="btn-primary" id="sub-remember">Use & remember alternative</button></div>
+  </div>`);
+  const select = modal.querySelector('#substitute-choice');
+  const savedAlternatives = new Set(bank[bankKey(current.name || "")]?.alternatives || []);
+  options.sort((a,b)=>Number(savedAlternatives.has(b[0]))-Number(savedAlternatives.has(a[0])) || a[1].name.localeCompare(b[1].name)).forEach(([key,entry]) => { const opt=document.createElement('option'); opt.value=key; opt.textContent=entry.name + (savedAlternatives.has(key) ? " · saved alternative" : ""); select.appendChild(opt); });
+  const apply = (remember, scope) => {
+    const key = select.value, entry = bank[key]; if (!entry) return;
+    const bankReplacement = bankExerciseForPlan(key);
+    if (!bankReplacement) return;
+    const replacement = {...bankReplacement, id:`sub_${slugify(bankReplacement.name)}`, substitutedFrom:current.id};
+    if (remember) {
+      const originalKey = bankKey(current.name || '');
+      bank[originalKey] ||= {name:current.name, type:current.type, trackType:current.trackType, weights:current.weights || [], targets:current.targets || null};
+      const alternatives = new Set(bank[originalKey].alternatives || []); alternatives.add(key);
+      bank[originalKey].alternatives = [...alternatives]; saveBank(bank);
+    }
+    const updated = getExerciseList(date, dayId).map(e => e.id === exId ? {...replacement, groupId:e.groupId} : e);
+    state.editScope = scope;
+    setExerciseList(date, dayId, updated, scope);
+    overlay.remove(); render();
+  };
+  modal.querySelector('#sub-cancel').onclick=()=>overlay.remove();
+  modal.querySelector('#sub-once').onclick=()=>apply(false, 'today');
+  modal.querySelector('#sub-remember').onclick=()=>apply(true, state.editScope || 'routine');
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay); trapFocus(overlay);
 }
 
 function defaultSets(ex) {
@@ -1701,7 +1827,7 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   const allTopped = computeAllTopped(sets, ex);
   const targetLabel = targetLabelFor(ex);
 
-  const card = el(`<div class="ex-card ${allTopped ? "topped" : ""}" data-ex-id="${ex.id}"></div>`);
+  const card = el(`<div class="ex-card ${allTopped ? "topped" : ""}" data-ex-id="${ex.id}" data-list-key="${dayId}"></div>`);
   const top = el(`
     <div class="ex-card-top">
       <div>
@@ -1713,6 +1839,7 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
         <button class="ex-move-up-btn" title="Move up">▲</button>
         <button class="ex-move-down-btn" title="Move down">▼</button>
         <button class="ex-edit-btn" title="Edit targets/weights">✎</button>
+        <button class="ex-substitute-btn" title="Substitute exercise">⇄</button>
         <button class="ex-delete-btn" title="Remove exercise">✕</button>
       </div>
     </div>
@@ -1721,6 +1848,7 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   top.querySelector(".ex-move-up-btn").onclick = () => moveExerciseInList(dayId, ex.id, -1);
   top.querySelector(".ex-move-down-btn").onclick = () => moveExerciseInList(dayId, ex.id, 1);
   top.querySelector(".ex-edit-btn").onclick = () => openEditExerciseModal(dayId, ex.id);
+  top.querySelector(".ex-substitute-btn").onclick = () => openSubstituteModal(dayId, ex.id);
   top.querySelector(".ex-delete-btn").onclick = () => removeExerciseFromDay(dayId, ex.id);
   card.appendChild(top);
 
@@ -1740,19 +1868,19 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
     const inputs = col.querySelectorAll("input");
     const repsInput = inputs[inputs.length - 1];
     if (isWeighted) {
-      inputs[0].onchange = (e) => updateSet(ex.id, i, "weight", Number(e.target.value));
+      inputs[0].onchange = (e) => updateSet(ex.id, i, "weight", Number(e.target.value), dayId, ex);
     }
     repsInput.onchange = (e) => {
       const val = e.target.value === "" ? null : Number(e.target.value);
       e.target.classList.toggle("has-reps", val != null);
-      updateSet(ex.id, i, "reps", val);
+      updateSet(ex.id, i, "reps", val, dayId, ex);
     };
     setRow.appendChild(col);
   });
   card.appendChild(setRow);
 
   const footer = el(`<div class="ex-card-footer"></div>`);
-  fillCardFooter(footer, ex, allTopped);
+  fillCardFooter(footer, ex, allTopped, dayId);
   card.appendChild(footer);
 
   return card;
@@ -1784,7 +1912,7 @@ function buildPlates(sets, ex) {
   return frag;
 }
 
-function fillCardFooter(footer, ex, allTopped) {
+function fillCardFooter(footer, ex, allTopped, listKey = null) {
   footer.innerHTML = "";
   if (!allTopped) return;
   let bumpLabel;
@@ -1802,24 +1930,23 @@ function fillCardFooter(footer, ex, allTopped) {
   }
   footer.appendChild(el(`<div class="topped-note">● Topped out — next session try ${bumpLabel}</div>`));
   const applyBtn = el(`<button class="apply-btn">Apply ${bumpLabel} for next session</button>`);
-  applyBtn.onclick = () => applyProgression(ex.id);
+  applyBtn.onclick = () => applyProgression(ex.id, listKey);
   footer.appendChild(applyBtn);
 }
 
 // Updates just one exercise card's visuals in place (plate stack + footer) —
 // deliberately does NOT touch the <input> elements, so focus and native Tab
 // order are never disturbed while you're logging sets.
-function refreshExerciseCard(exId, sets) {
-  const ex = allExercises()[exId];
-  if (!ex) return;
+function refreshExerciseCard(exId, sets, exerciseSnapshot = null) {
   const card = document.querySelector(`.ex-card[data-ex-id="${cssEscape(exId)}"]`);
-  if (!card) return;
+  const ex = exerciseSnapshot || allExercises()[exId];
+  if (!ex || !card) return;
   const allTopped = computeAllTopped(sets, ex);
   card.classList.toggle("topped", allTopped);
   const plateStack = card.querySelector(".plate-stack");
   plateStack.innerHTML = "";
   plateStack.appendChild(buildPlates(sets, ex));
-  fillCardFooter(card.querySelector(".ex-card-footer"), ex, allTopped);
+  fillCardFooter(card.querySelector(".ex-card-footer"), ex, allTopped, card.dataset.listKey);
 }
 
 function refreshActiveDayPillDone() {
@@ -1848,8 +1975,9 @@ function clearSingleDay(date) {
   const plan = logs[date].plan;
   const lists = logs[date].lists;
   const planListKeys = logs[date].planListKeys;
+  const routineOverrides = logs[date].routineOverrides;
   delete logs[date];
-  if (plan) logs[date] = { dayId: dayLog.dayId, entries: {}, plan, ...(lists ? {lists} : {}), ...(planListKeys ? {planListKeys} : {}) };
+  if (plan || lists || routineOverrides) logs[date] = { dayId: dayLog.dayId, entries: {}, ...(plan ? {plan} : {}), ...(lists ? {lists} : {}), ...(planListKeys ? {planListKeys} : {}), ...(routineOverrides ? {routineOverrides} : {}) };
   saveLogs(logs);
   render();
 }
@@ -1859,54 +1987,94 @@ function moveExerciseInList(listKey, exId, direction) {
   const list = [...getExerciseList(date, listKey)];
   const idx = list.findIndex((e) => e.id === exId);
   if (idx === -1) return;
-  const newIdx = idx + direction;
-  if (newIdx < 0 || newIdx >= list.length) return;
-  [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
-  setExerciseList(date, listKey, list);
+  const groupId = list[idx].groupId || null;
+  const block = groupId ? list.filter(e => e.groupId === groupId) : [list[idx]];
+  const blockIds = new Set(block.map(e => e.id));
+  const remaining = list.filter(e => !blockIds.has(e.id));
+  const firstOriginal = Math.min(...list.map((e,i) => blockIds.has(e.id) ? i : Infinity));
+  const insertionBefore = list.slice(0, firstOriginal).filter(e => !blockIds.has(e.id)).length;
+  const currentIndex = insertionBefore;
+  const targetIndex = direction < 0 ? currentIndex - 1 : currentIndex;
+  if (targetIndex < 0 || targetIndex >= remaining.length) return;
+  const neighbor = remaining[targetIndex];
+  const neighborGroup = neighbor.groupId || null;
+  const neighborBlock = neighborGroup ? remaining.filter(e => e.groupId === neighborGroup) : [neighbor];
+  const neighborIds = new Set(neighborBlock.map(e => e.id));
+  const neighborStart = remaining.findIndex(e => neighborIds.has(e.id));
+  const insertAt = direction < 0 ? neighborStart : neighborStart + neighborBlock.length;
+  remaining.splice(insertAt, 0, ...block);
+  setExerciseList(date, listKey, remaining);
   render();
 }
 
 function removeExerciseFromDay(dayId, exId) {
   const date = state.selectedDate;
-  const ex = allExercises()[exId];
-  const dayLabel = listLabel(dayId);
-  const shared = isSharedList(dayId);
-  const message = shared
-    ? `Permanently remove ${ex ? ex.name : "this exercise"} from your ${dayLabel} routine — every ${dayLabel} day, past and future, not just today?\n\nSkipping a single day doesn't need this — just tag that date differently, or leave it unset. Past logged history for this exercise stays in History; the exercise itself stays in your bank if you want to re-add it later.`
-    : `Remove ${ex ? ex.name : "this exercise"} from ${dayLabel} on ${fmtDate(date)}?\n\nThis only affects this one date — other ${dayLabel} days keep whatever exercises they already have. Past logged history stays in History; the exercise itself stays in your bank.`;
-  const ok = confirm(message);
-  if (!ok) return;
-
-  preserveCompletedExerciseDetails(date);
-  if (logs[date]?.plan?.levelupExerciseId === exId) {
-    logs[date].plan.levelup = "";
-    delete logs[date].plan.levelupName;
-    delete logs[date].plan.levelupExerciseId;
-    delete logs[date].plan.levelupExerciseKey;
-    delete logs[date].plan.levelupExerciseListKey;
-  }
-  const updated = getExerciseList(date, dayId).filter((e) => e.id !== exId);
-  // A "circuit" of one doesn't mean anything — auto-ungroup any group left with a single member.
-  if (ex && ex.groupId) {
-    const remaining = updated.filter((e) => e.groupId === ex.groupId);
-    if (remaining.length === 1) {
-      const idx = updated.findIndex((e) => e.id === remaining[0].id);
-      updated[idx] = { ...updated[idx], groupId: undefined };
+  const ex = getExerciseList(date, dayId).find(item => item.id === exId) || allExercises()[exId];
+  if (!ex) return;
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`<div class="modal"><h3>Remove ${safeText(ex.name)}</h3>
+    <div class="form-row"><label for="remove-scope">What would you like to do?</label>
+      <select id="remove-scope">
+        <option value="today">Remove from this workout only</option>
+        <option value="routine">Remove from the saved routine</option>
+        <option value="archive">Archive from Exercise Bank</option>
+        <option value="delete">Permanently delete from Exercise Bank</option>
+      </select>
+    </div>
+    <div class="field-hint">Workout history is retained. Permanent deletion cannot be undone.</div>
+    <div class="modal-actions"><button class="btn-secondary" id="remove-cancel">Cancel</button><button class="btn-primary" id="remove-confirm">Continue</button></div>
+  </div>`);
+  overlay.appendChild(modal);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  modal.querySelector('#remove-cancel').onclick = () => overlay.remove();
+  modal.querySelector('#remove-confirm').onclick = () => {
+    const choice = modal.querySelector('#remove-scope').value;
+    if (choice === 'delete' && !confirm(`Permanently delete ${ex.name} from the Exercise Bank? Historical workout records will remain, but the bank entry cannot be recovered.`)) return;
+    preserveCompletedExerciseDetails(date);
+    if (logs[date]?.plan?.levelupExerciseId === exId) {
+      logs[date].plan.levelup = '';
+      delete logs[date].plan.levelupName; delete logs[date].plan.levelupExerciseId;
+      delete logs[date].plan.levelupExerciseKey; delete logs[date].plan.levelupExerciseListKey;
     }
-  }
-  setExerciseList(date, dayId, updated);
-  render();
+    const updated = getExerciseList(date, dayId).filter(e => e.id !== exId);
+    if (ex.groupId) {
+      const remaining = updated.filter(e => e.groupId === ex.groupId);
+      if (remaining.length === 1) { const i = updated.findIndex(e => e.id === remaining[0].id); updated[i] = {...updated[i], groupId:undefined}; }
+    }
+    if (choice === 'today' || choice === 'routine') {
+      state.editScope = choice;
+      setExerciseList(date, dayId, updated, choice);
+      if (choice === 'routine' && !dayId.endsWith('_finisher')) {
+        const key = bankKey(ex.name || "");
+        if (bank[key]?.dayDesignation === dayId) { bank[key].dayDesignation = ""; saveBank(bank); }
+      }
+    }
+    // Archiving/deleting from the Bank does not silently remove an exercise
+    // from existing routines or historical workouts.
+    if (choice === 'archive') { bank[bankKey(ex.name)] = {...(bank[bankKey(ex.name)] || {}), archived:true}; saveBank(bank); }
+    if (choice === 'delete') { delete bank[bankKey(ex.name)]; saveBank(bank); }
+    overlay.remove(); render();
+  };
+  document.body.appendChild(overlay); trapFocus(overlay);
 }
 
-function updateSet(exId, idx, field, value) {
+function updateSet(exId, idx, field, value, listKey = null, exerciseSnapshot = null) {
   const dayId = selectedDayInfo()?.id || state.selectedDayId;
+  const snapshotKey = listKey || dayId;
   const date = state.selectedDate;
-  const ex = allExercises()[exId];
+  const ex = exerciseSnapshot || allExercises()[exId];
   const current = logs[date]?.entries?.[exId]?.sets || defaultSets(ex);
   const newSets = current.map((s, i) => (i === idx ? { ...s, [field]: value } : s));
 
   if (!logs[date]) logs[date] = { dayId, entries: {} };
   logs[date].dayId = dayId;
+  // Freeze the routine configuration the first time a workout is logged.
+  if (!logs[date].routineOverrides?.[snapshotKey]) {
+    logs[date].lists ||= {};
+    logs[date].routineOverrides ||= {};
+    logs[date].lists[snapshotKey] = getExerciseList(date, snapshotKey).map(e => ({...e}));
+    logs[date].routineOverrides[snapshotKey] = true;
+  }
 
   // Only actually persist an entry once there's real data (at least one
   // set with a value entered) — touching a weight box without ever logging
@@ -1916,39 +2084,27 @@ function updateSet(exId, idx, field, value) {
   } else {
     delete logs[date].entries[exId];
   }
+  // Capture the exact exercise definition used by this dated workout before
+  // later routine edits or same-ID reuse in another routine can change it.
+  preserveCompletedExerciseDetails(date);
   saveLogs(logs);
 
   if (field === "weight" && ex.trackType === "weight") {
     upsertBank({ name: ex.name, type: ex.type, trackType: ex.trackType, weights: newSets.map((s) => s.weight), targets: ex.targets, customUnit: ex.customUnit });
   }
 
-  refreshExerciseCard(exId, newSets);
+  refreshExerciseCard(exId, newSets, ex);
   refreshActiveDayPillDone();
 }
 
-function applyProgression(exId) {
+function applyProgression(exId, listKeyHint = null) {
   const date = state.selectedDate;
-
-  // Search this date's own per-date lists first, then the shared library
-  // (Upper/Lower), then fall back to legacy shared data for a non-shared
-  // type that hasn't been materialized for this date yet — in that last
-  // case, applying progression is itself the modification that splits this
-  // date off into its own independent copy.
-  const perDateLists = logs[date]?.lists || {};
-  let listKey = Object.keys(perDateLists).find((k) => (perDateLists[k] || []).some((e) => e.id === exId));
-  let source = listKey ? "perDate" : null;
-
-  if (!listKey) {
-    listKey = Object.keys(library).find((k) => isSharedList(k) && (library[k] || []).some((e) => e.id === exId));
-    if (listKey) source = "shared";
-  }
-  if (!listKey) {
-    listKey = Object.keys(library).find((k) => !isSharedList(k) && (library[k] || []).some((e) => e.id === exId));
-    if (listKey) source = "legacy";
-  }
+  const activeDayId = selectedDayInfo()?.id || state.selectedDayId;
+  const candidateKeys = [listKeyHint, activeDayId, activeDayId ? finisherKey(activeDayId) : null].filter(Boolean);
+  let listKey = candidateKeys.find(key => getExerciseList(date, key).some(e => e.id === exId));
+  if (!listKey) listKey = Object.keys(logs[date]?.lists || {}).find(key => getExerciseList(date, key).some(e => e.id === exId));
   if (!listKey) return;
-
-  const currentList = source === "shared" ? (library[listKey] || []) : getExerciseList(date, listKey);
+  const currentList = getExerciseList(date, listKey);
   let updatedEx = null;
   const newList = currentList.map((e) => {
     if (e.id !== exId) return e;
@@ -1970,13 +2126,7 @@ function applyProgression(exId) {
     }
     return updatedEx;
   });
-
-  if (source === "shared") {
-    library[listKey] = newList;
-    saveLibrary(library);
-  } else {
-    setExerciseList(date, listKey, newList);
-  }
+  setExerciseList(date, listKey, newList);
   if (updatedEx) upsertBank(updatedEx);
   render();
 }
@@ -1993,6 +2143,9 @@ function renderHistory() {
   const exportBtn = el(`<button class="summary-btn" style="margin-bottom:14px;">⬇ Export CSV</button>`);
   exportBtn.onclick = openExportModal;
   wrap.appendChild(exportBtn);
+  const backupBtn = el(`<button class="summary-btn" style="margin:0 0 14px 8px;">Backup / Restore</button>`);
+  backupBtn.onclick = openBackupRestoreModal;
+  wrap.appendChild(backupBtn);
   const historicAddBtn = el(`<button class="summary-btn" style="margin:0 0 14px 8px;">+ Add Past Class</button>`);
   historicAddBtn.onclick = openHistoricClassEntry;
   wrap.appendChild(historicAddBtn);
@@ -2080,6 +2233,43 @@ function renderHistory() {
 }
 
 // ---- Export filters modal ----
+function openBackupRestoreModal() {
+  const overlay = el(`<div class="modal-overlay"></div>`);
+  const modal = el(`<div class="modal"><h3>Backup / Restore Tracker</h3>
+    <p class="field-hint">A full backup includes routines, exercise order, saved supersets, the Exercise Bank, workout history, classes and tracker settings.</p>
+    <div class="modal-actions"><button class="btn-primary" id="backup-download">Download full backup</button></div>
+    <div class="form-row" style="margin-top:16px"><label for="backup-file">Restore from a backup file</label><input type="file" id="backup-file" accept="application/json,.json" /></div>
+    <div class="field-hint">Restore replaces the current tracker data with the selected backup, preventing duplicate workout records. Download a current backup first if you may need it.</div>
+    <div class="modal-actions"><button class="btn-secondary" id="backup-close">Close</button><button class="btn-primary" id="backup-restore" disabled>Restore backup</button></div>
+  </div>`);
+  let parsed = null;
+  modal.querySelector('#backup-download').onclick = () => {
+    const payload = {format:'total-transformation-tracker-backup', version:APP_VERSION, exportedAt:new Date().toISOString(), library, logs, bank, classes, dayDesignations, marathon};
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`total-transformation-tracker-backup-${todayISO()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  modal.querySelector('#backup-file').onchange = async e => {
+    const file=e.target.files?.[0]; parsed=null;
+    if (!file) { modal.querySelector('#backup-restore').disabled=true; return; }
+    try { const candidate=JSON.parse(await file.text()); if(candidate?.format!=='total-transformation-tracker-backup' || !candidate.library || !candidate.logs) throw new Error('This is not a supported tracker backup.'); parsed=candidate; modal.querySelector('#backup-restore').disabled=false; }
+    catch(err) { alert(err.message || 'Could not read this backup file.'); modal.querySelector('#backup-restore').disabled=true; }
+  };
+  modal.querySelector('#backup-restore').onclick = () => {
+    if (!parsed) return;
+    if (!confirm('Replace the current tracker data with this backup? Current data will be overwritten. Download a backup first if you may need it.')) return;
+    library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; logs=parsed.logs || {}; bank=parsed.bank || {}; classes=Array.isArray(parsed.classes)?parsed.classes:[];
+    if (Array.isArray(parsed.dayDesignations)) { dayDesignations=normalizeDayDesignations(parsed.dayDesignations); refreshDayDefinitions(); }
+    if (parsed.marathon) marathon={...structuredClone(DEFAULT_MARATHON),...parsed.marathon};
+    localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank));
+    localStorage.setItem(LS_CLASSES,JSON.stringify(classes)); localStorage.setItem(LS_DAY_DESIGNATIONS,JSON.stringify(dayDesignations)); localStorage.setItem(LS_MARATHON,JSON.stringify(marathon));
+    state.selectedDate = todayISO(); state.selectedDayId = null; state.editScope = "routine"; state.tab = "overview";
+    forceRemoteReplace = true; touchLocalUpdatedAt(); schedulePush(); overlay.remove(); render();
+  };
+  modal.querySelector('#backup-close').onclick=()=>overlay.remove();
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay); trapFocus(overlay);
+}
+
 function openExportModal() {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const exMap = allExercises();
@@ -2648,7 +2838,7 @@ function openImportModal() {
         newList = [...currentList, { id: slugify(name), name, type, trackType, numSets, weights, targets, customUnit }];
         added++;
       }
-      setExerciseList(date, day, newList);
+      setExerciseList(date, day, newList, "routine");
       upsertBank({ name, type, trackType, weights, targets, customUnit });
     });
 
@@ -2700,10 +2890,10 @@ function openBankManagerModal(onClose) {
   const modal = el(`
     <div class="modal">
       <h3>Manage Exercise Bank</h3>
-      <div class="field-hint" style="margin-bottom:14px;">Removing something here only affects this quick-pick list — it won't touch exercises already placed on any day, or any logged history.</div>
+      <div class="field-hint" style="margin-bottom:14px;">Removing something here only affects this quick-pick list — it won't touch exercises already placed on any day, or any logged history. For a full tracker backup including routines, supersets and workout history, use Backup / Restore in History.</div>
       <div class="modal-actions" style="margin-bottom:16px;">
-        <button class="btn-secondary" id="bank-export-btn" style="flex:1">⬇ Export Backup</button>
-        <button class="btn-secondary" id="bank-import-btn" style="flex:1">⬆ Restore Backup</button>
+        <button class="btn-secondary" id="bank-export-btn" style="flex:1">⬇ Export Bank</button>
+        <button class="btn-secondary" id="bank-import-btn" style="flex:1">⬆ Restore Bank</button>
       </div>
       <input type="file" id="bank-import-file" accept="application/json" style="display:none" />
       <section class="bank-day-designations"><h4>Day assignments</h4><p class="field-hint">Assign exercises to a day for Planning to add them automatically. Leave an exercise Unassigned while you sort the bank; it stays available for direct Log and finisher selection. You can rename or add days at any time.</p><div class="form-row"><input id="new-day-designation" placeholder="Add a day name, e.g. Commute Day" /><button type="button" class="btn-primary" id="add-day-designation">Add day</button></div><div id="day-designation-list"></div></section><div id="bank-manager-list"></div>
@@ -2740,10 +2930,10 @@ function openBankManagerModal(onClose) {
       const row = el(`
         <div class="bank-row">
           <div>
-            <div class="bank-row-name">${entry.name}</div>
+            <div class="bank-row-name">${entry.name}${entry.archived ? ' <span class="bank-archived-label">Archived</span>' : ''}</div>
             <div class="bank-row-meta">${TRACK_TYPES[entry.trackType]?.label || entry.trackType}</div><div class="bank-current-designation">Currently: ${safeText(dayDesignationLabel(entry.dayDesignation) || "Unassigned")}</div><label class="bank-day-label">Change day designation<select class="bank-day-designation"><option value=""${entry.dayDesignation?"":" selected"}>Unassigned</option>${dayDesignations.map(d=>`<option value="${safeText(d.id)}"${entry.dayDesignation===d.id?" selected":""}>${safeText(d.label)}</option>`).join("")}</select></label><div class="bank-designation-preview" hidden></div><div class="bank-designation-actions" hidden><button type="button" class="btn-primary bank-designation-save">Save change</button><button type="button" class="btn-secondary bank-designation-cancel">Cancel</button></div>
           </div>
-          <button class="bank-row-delete-btn" title="Remove from bank">✕</button>
+          <button class="bank-row-delete-btn" title="${entry.archived ? 'Restore to bank' : 'Archive from bank'}">${entry.archived ? 'Restore' : 'Archive'}</button>
         </div>
       `);
       const designationSelect = row.querySelector(".bank-day-designation");
@@ -2771,8 +2961,12 @@ function openBankManagerModal(onClose) {
       };
       cancelDesignationButton.onclick = () => { designationSelect.value = savedDesignation; updateDesignationPreview(); };
       row.querySelector(".bank-row-delete-btn").onclick = () => {
-        if (!confirm(`Remove "${entry.name}" from your bank?\n\nIt stays untouched on any day it's currently placed on, and in logged history — this only removes it from the quick-pick list.`)) return;
-        delete bank[key];
+        if (entry.archived) {
+          bank[key].archived = false;
+        } else {
+          if (!confirm(`Archive "${entry.name}" from the Exercise Bank? It will remain in existing routines and workout history and can be restored here.`)) return;
+          bank[key].archived = true;
+        }
         saveBank(bank);
         renderList();
       };
@@ -3218,13 +3412,8 @@ function openEditExerciseModal(dayId, exId) {
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
     const updatedEx = { ...ex, name, trackType, type, numSets, weights, targets, customUnit };
 
-    if (isSharedList(dayId)) {
-      Object.assign(ex, updatedEx);
-      saveLibrary(library);
-    } else {
-      const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
-      setExerciseList(date, dayId, newList);
-    }
+    const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
+    setExerciseList(date, dayId, newList);
     upsertBank(updatedEx);
 
     document.body.removeChild(overlay);

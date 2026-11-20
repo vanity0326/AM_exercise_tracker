@@ -1,0 +1,38 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 69
+
+Routine templates and ordering
+- Added reusable routine templates for all loggable day types and finisher lists, rather than limiting shared templates to Upper/Lower.
+- Exercise order, edits, additions, and saved superset groupings now persist at routine level by default.
+- Added a compact edit-scope selector for applying changes to the saved routine or only the current workout.
+- Existing completed workouts are frozen as dated routine snapshots; subsequent routine edits affect future workouts without rewriting prior sessions.
+- Legacy date-specific lists are migrated into reusable templates where no template existed; dates with completed data retain their existing list snapshots.
+- Planning no longer replaces a saved exercise order with an alphabetically sorted bank list.
+
+Supersets
+- Extended the existing Circuit grouping into Supersets; multiple exercises can be grouped and tracked independently.
+- Supersets can be saved to the routine or created for the current workout only.
+- Exercises cannot be selected into another superset while already grouped.
+- Added controls to move an entire superset as a unit.
+- Added "Separate for this workout" to break apart a saved superset temporarily without changing the saved routine.
+- No in-app rest timers or rest prompts were added; rest timing remains with the user's Apple Watch.
+
+Workout and exercise management
+- Added temporary substitution and remembered alternative actions using Exercise Bank entries.
+- Added distinct remove-from-this-workout, remove-from-saved-routine, archive-from-bank, and permanently-delete-from-bank choices. Archiving/deleting a bank entry does not silently remove it from existing routines or history.
+- Existing set-by-set tracking remains; workout list configuration is snapshotted when the first set is logged so midweek routine edits do not alter an in-progress session.
+- Existing per-set values save as entered and can be resumed after leaving the page; unfinished sets are not marked complete automatically.
+
+Backup and restore
+- Added full JSON backup and restore from History. Backups include routine templates/order, workout logs/history, Exercise Bank, class catalog, day designations, and marathon data.
+- Restore replaces the current dataset after confirmation rather than appending records, avoiding duplicate dated workout entries.
+
+Compatibility
+- Retained the existing tabs, progress charts, history, classes, marathon tools, Exercise Bank, CSV export, and cross-device sync payload.
+- Routine templates and supersets are stored within the existing library/log data structures so the current Netlify data endpoint can synchronize them without a schema migration.
+- Updated app and service-worker cache versions to v69.
+
+Verification
+- Node.js syntax checks passed for app.js, netlify/functions/data.js, sw.js, marathon.js, and class-library.js.
+- Custom logic tests passed for routine order persistence across dates, workout-only overrides, preserving historical routine snapshots, and moving a complete superset as one block.
+- A headless Chromium run was attempted but could not complete in this execution environment, so browser UI behavior was not runtime-verified here.
+- No live Netlify deployment or cross-device sync test was performed.

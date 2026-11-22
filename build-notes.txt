@@ -1,0 +1,34 @@
+TOTAL TRANSFORMATION TRACKER — VERSION 70 BUILD NOTES
+
+BASELINE
+- Built from the user's uploaded Exercise_Tracker_v69_Ready_to_Deploy package.
+- Preserves the existing app architecture, data model, tabs, Netlify sync endpoint, backup/restore, exercise bank, PT page, class library, and marathon tools.
+
+VERSION 70 CHANGES
+- Four preloaded strength templates: Upper A, Upper B, Lower A, Lower B.
+- Upper A and Lower A replace the old Upper Lift and Lower Lift templates on first v70 load, using the existing routine-update path so completed dated workouts are frozen before template replacement.
+- Upper B and Lower B are separately selectable and editable.
+- Strength templates are machine-focused; no cable work, calf raises, or separate gym-core exercises.
+- Core is handled through Apple Fitness+ classes outside the gym strength templates.
+- Added optional cardio guidance for elliptical and recumbent bike; swimming remains an existing activity.
+- Added a one-time editable calendar preload for 2026-11-23 through 2027-01-03. It fills only dates without an existing Primary plan.
+- Four strength sessions are scheduled each week with holiday adjustments. Wednesday lap swimming is suggested. No Saturday swimming is scheduled. PT schedule is not altered or duplicated.
+- User can move/skip workouts, edit exercises and prescriptions, and change cardio. Completed workout history is preserved.
+
+SCHEDULE OVERVIEW
+- Thanksgiving week: Nov 23 Lower A; Nov 24 Upper A; Nov 25 Swim; Nov 27 Upper B; Nov 29 Lower B.
+- Regular weeks: Monday Lower A; Tuesday Upper A; Wednesday Swim; Thursday Lower B; Friday Upper B.
+- Christmas week: Dec 21 Lower A; Dec 22 Upper A; Dec 23 Swim; Dec 24 Lower B; Dec 26 Upper B.
+- New Year's week: Dec 28 Lower A; Dec 29 Upper A; Dec 30 Swim; Dec 31 Lower B; Jan 2 Upper B.
+- PT remains according to the user's existing PT schedule. Sundays are otherwise open for recovery or optional swimming.
+
+SAFETY/CONSTRAINTS
+- Bilateral Achilles considerations remain prominent. PT instructions and symptom response take priority.
+- Leg press is included as user-confirmed permitted movement; calf raises are excluded.
+- Stationary cycling and elliptical are user-confirmed permitted activities; use comfortable intensity and stop/modify for symptom aggravation.
+- Marathon training is optional for this block. Pilates Reformer remains optional if offered.
+
+VALIDATION
+- JavaScript syntax checked with Node.js.
+- ZIP integrity checked after packaging.
+- Browser interaction, live Netlify deployment, remote sync against the user's account, and cross-device behavior have not been exercised in this build environment.

@@ -1,0 +1,26 @@
+TOTAL TRANSFORMATION TRACKER — VERSION 70
+
+Strength routines
+- Preloaded four distinct selectable routines: Upper A, Upper B, Lower A, and Lower B.
+- Rebuilt Upper A and Lower A from the user's existing workout structure and progression data, with revised muscle-group sequencing and balanced additions.
+- Added Upper B and Lower B as complete machine-focused routines.
+- Starter routines use the existing routine editor, so completed dated workouts are snapshotted before shared templates change. Historical workout records remain intact.
+- No cable exercises, calf raises, or separate gym-core exercises are included.
+- Apple Fitness+ Core remains the user's preferred core workout outside the strength templates.
+
+Six-week calendar preload
+- Preloaded editable strength suggestions from November 23, 2026 through January 3, 2027.
+- Four strength sessions per week, with Thanksgiving, Christmas, and New Year's adjustments.
+- Wednesday lap swimming is suggested; no Saturday swimming is scheduled.
+- Existing dated plans are never overwritten. Users can move, skip, substitute, or change any suggested activity.
+- Physical Therapy remains on its existing schedule and is not duplicated or replaced by the block calendar.
+
+Cardio and recovery
+- Optional cardio guidance includes elliptical and recumbent bike, with lap swimming as a separate or post-upper-body option.
+- Recommendations remain subordinate to bilateral Achilles symptoms, PT instructions, and recovery.
+- Marathon training is not required for this block. Pilates Reformer remains optional if classes become available.
+
+Compatibility
+- Preserves existing tabs, logs, exercise bank, workout history, routine editing, substitutions, supersets, classes, marathon tools, Achilles PT page, backups, and Netlify sync endpoint.
+- Existing custom day labels are retained; untouched legacy labels "Upper Lift" and "Lower Lift" are renamed "Upper A" and "Lower A".
+- App and offline cache remain Version 70.

@@ -1,0 +1,22 @@
+Toni's Total Training Tracker — Version 63
+
+Starting point: Version 62 package, itself based on Exercise_Tracker_v58_Ready_to_Deploy.zip.
+
+Changes
+- Removed the separate “Add to today's Log under” selector from Add Exercise.
+- Adding an exercise from the primary Log now places it under the activity selected in Planning. The Add Activity / Finisher action continues to add it to the finisher list.
+- Kept Exercise Bank Day assignment as a separate optional field with Unassigned. It determines automatic Planning population; it does not limit direct Log or finisher selection.
+- Preserved the v62 one-time reset that clears bank Day assignments on upgrade while keeping bank entries.
+- Preserved Level Up activities in Log, multiple removable finishers, completed History details, and existing app features.
+- Updated the visible version, asset references, deployment label, and service worker cache to v63.
+
+Checks
+- `node --check app.js` — passed.
+- `node --check class-library.js` — passed.
+- `node --check marathon.js` — passed.
+- `node --check sw.js` — passed.
+- Source and release metadata checks passed; the old Log destination selector is removed.
+- `package.json` defines no automated test or build scripts. Browser runtime and live sync behavior were not exercised.
+
+Deployment note
+- Complete the existing `/restore.html` recovered-data restore step after deployment if it has not already been done.

@@ -1,67 +1,86 @@
+// The Exercise Tracker's only /api/data handler. Shared cross-device storage
+// for Iron Log, backed by Netlify Blobs.
+// GET  -> returns the current { library, logs, bank, marathon, updatedAt } JSON, or null if nothing saved yet.
+// PUT  -> saves the posted { library, logs, bank, marathon } JSON, stamps updatedAt, returns it.
+//
+// No login/auth — this mirrors the Kory planner setup: one shared data pool,
+// reachable by anyone who has the URL. Fine for personal/family use; not for
+// a public app.
+
 import { getStore } from "@netlify/blobs";
 
-export const config = { path: "/api/data" };
+const KEY = "data";
 
-const STORE_NAME = "daily-health-tracker";
-const STATE_KEY = "shared-state";
-const MAX_BODY_BYTES = 2_000_000;
+export default async (req) => {
+  const store = getStore("iron-log");
 
-function json(body, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-      ...extraHeaders
+  if (req.method === "GET") {
+    const data = await store.get(KEY, { type: "json" });
+    return new Response(JSON.stringify(data || null), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (req.method === "PUT" || req.method === "POST") {
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-  });
-}
-
-function isValidState(value) {
-  return value && typeof value === "object" && value.schemaVersion === 1 &&
-    value.logs && typeof value.logs === "object" &&
-    value.weighIns && typeof value.weighIns === "object" &&
-    Array.isArray(value.measurements) &&
-    value.settings && typeof value.settings === "object" &&
-    Array.isArray(value.settings.targets) &&
-    value.settings.dailyOverrides && typeof value.settings.dailyOverrides === "object";
-}
-
-export default async function (request) {
-  const store = getStore(STORE_NAME);
-
-  if (request.method === "GET") {
-    const entry = await store.getWithMetadata(STATE_KEY, { type: "json" });
-    if (!entry) return json({ state: null, etag: null });
-    return json({ state: entry.data, etag: entry.etag, updatedAt: entry.metadata?.updatedAt || null });
+    const previous = await store.get(KEY, { type: "json" });
+    const replaceAll = body.replaceAll === true;
+    const previousLibrary = previous?.library || {};
+    const incomingLibrary = body.library || {};
+    const library = replaceAll ? { ...incomingLibrary } : { ...previousLibrary, ...incomingLibrary };
+    // Do not let an empty/stale browser snapshot erase shared routines.
+    if (!replaceAll) {
+      for (const [key, list] of Object.entries(previousLibrary)) {
+        if (Array.isArray(list) && list.length && Array.isArray(incomingLibrary[key]) && incomingLibrary[key].length === 0) {
+          library[key] = list;
+        }
+      }
+    }
+    const previousBankResetVersion = Number(previous?.bankResetVersion || 0);
+    const incomingBankResetVersion = Number(body.bankResetVersion || 0);
+    const bankResetVersion = Math.max(previousBankResetVersion, incomingBankResetVersion);
+    // Version 65 submits the rebuilt bank as the authoritative replacement.
+    // Thereafter, older clients cannot repopulate the deleted bank snapshot.
+    const bank = replaceAll
+      ? { ...(body.bank || {}) }
+      : incomingBankResetVersion >= 65
+        ? { ...(body.bank || {}) }
+        : (previousBankResetVersion >= 65
+          ? (previous?.bank || {})
+          : { ...(previous?.bank || {}), ...(body.bank || {}) });
+    const toSave = {
+      library,
+      // Merge by date during ordinary sync so a partial cache cannot wipe
+      // history. An explicit backup restore replaces the full dated dataset.
+      logs: replaceAll ? (body.logs || {}) : { ...(previous?.logs || {}), ...(body.logs || {}) },
+      bank,
+      bankResetVersion,
+      classes: replaceAll
+        ? (Array.isArray(body.classes) ? body.classes : [])
+        : Array.isArray(body.classes) && body.classes.length
+          ? body.classes
+          : (previous?.classes || body.classes || []),
+      marathon: replaceAll ? (body.marathon || null) : (body.marathon || previous?.marathon || null),
+      dayDesignations: replaceAll
+        ? (Array.isArray(body.dayDesignations) ? body.dayDesignations : [])
+        : Array.isArray(body.dayDesignations) ? body.dayDesignations : (previous?.dayDesignations || []),
+      updatedAt: new Date().toISOString(),
+    };
+    await store.setJSON(KEY, toSave);
+    return new Response(JSON.stringify(toSave), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  if (request.method !== "PUT") return json({ error: "Method not allowed." }, 405, { Allow: "GET, PUT" });
+  return new Response("Method not allowed", { status: 405 });
+};
 
-  const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > MAX_BODY_BYTES) return json({ error: "Tracker data is too large." }, 413);
-
-  let body;
-  try { body = await request.json(); }
-  catch { return json({ error: "Invalid JSON." }, 400); }
-  if (!isValidState(body?.state)) return json({ error: "Invalid tracker data." }, 400);
-
-  const serialized = JSON.stringify(body.state);
-  if (new TextEncoder().encode(serialized).byteLength > MAX_BODY_BYTES) {
-    return json({ error: "Tracker data is too large." }, 413);
-  }
-
-  const expectedETag = request.headers.get("if-match");
-  const options = expectedETag ? { onlyIfMatch: expectedETag } : { onlyIfNew: true };
-  const result = await store.setJSON(STATE_KEY, body.state, {
-    ...options,
-    metadata: { updatedAt: new Date().toISOString() }
-  });
-
-  if (!result.modified) {
-    const current = await store.getWithMetadata(STATE_KEY, { type: "json" });
-    return json({ error: "A newer copy was saved on another device.", state: current?.data || null, etag: current?.etag || null }, 409);
-  }
-
-  return json({ ok: true, etag: result.etag, updatedAt: new Date().toISOString() });
-}
+export const config = { path: "/api/data" };

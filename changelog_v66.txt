@@ -1,0 +1,8 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 66
+
+- Keep one At a Glance activity row for each same-name activity while displaying all distinct class records attached to it.
+- Assign Classes now lists each saved class assignment separately. Editing or removing one class record no longer clears other assignments for the same exercise. A separate Add another class action supports multiple classes for one activity.
+- Preserve the Version 65 one-time full Exercise Bank reset and its shared sync marker. Existing Logs, completed History, routines, and saved classes remain intact.
+- Update displayed version, asset references, and offline cache to v66.
+
+Verification: JavaScript syntax checks passed for app.js, class-library.js, marathon.js, sw.js, and netlify/functions/data.js. Static checks confirmed the v66 multi-class display/edit code. No package test/build scripts are defined. Browser behavior, live data, cross-device sync, and deployment were not tested.

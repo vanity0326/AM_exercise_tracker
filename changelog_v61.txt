@@ -1,0 +1,27 @@
+Toni's Total Training Tracker — Version 61
+
+Starting package: Exercise_Tracker_v58_Ready_to_Deploy.zip, with the Version 60 planning-to-logging changes carried forward.
+
+Changes
+- On upgrade, clears the Day assignment from every existing Exercise Bank item, including Elliptical, while keeping all bank exercises and their tracking details. A new v61 migration key ensures this reset also runs for browsers that already opened v60. The reset remains pending until the updated bank successfully syncs.
+- After the reset, Day assignments can be made, changed, or cleared manually and persist.
+- Every bank exercise remains selectable as a Planning Primary, a direct Log exercise, or a finisher regardless of its Day assignment.
+- Planning a day type populates its currently assigned bank exercises into that date's Log list.
+- Selecting a bank exercise as Level Up adds it as an additional loggable activity for that date. It is not marked complete automatically; it can be removed individually.
+- Existing finishers stay in the date's list. Multiple finishers remain individually removable.
+- Plan changes preserve completed exercise details, measurements, and their original History date.
+- Updated the visible version, asset references, deployment label, and service worker cache to v61.
+
+Preserved
+- Existing bank entries, storage keys, sync data, class records and links, run records, rehab pages, restore tool, and recovered workout data.
+
+Checks
+- `node --check app.js` — passed.
+- `node --check class-library.js` — passed.
+- `node --check marathon.js` — passed.
+- `node --check sw.js` — passed.
+- `package.json` defines no automated test or build scripts. The ZIP contents and release version references were checked.
+- Browser runtime and live sync behavior were not exercised.
+
+Deployment note
+- Complete the existing `/restore.html` recovered-data restore step after deployment if it has not already been done.

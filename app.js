@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v70";
+const APP_VERSION = "v72";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -1007,16 +1007,40 @@ function planForDate(date) { return logs[date]?.plan || {}; }
 
 // Preload the six-week strength block once. Existing dated plans are preserved;
 // blank dates receive editable suggestions, never locked appointments.
+function migrateV72ThanksgivingSchedule() {
+  const marker = "iron-log-v72-thanksgiving-lower-b-moved";
+  if (localStorage.getItem(marker) === "complete") return false;
+  const fromDate = "2026-11-29", toDate = "2026-11-28";
+  const source = logs[fromDate], destination = logs[toDate];
+  const sourceHasDateEdits = Object.keys(source?.lists || {}).length > 0 ||
+    Object.keys(source?.routineOverrides || {}).length > 0 ||
+    Object.keys(source?.classSessions || {}).length > 0 || !!source?.plan?.levelup;
+  const canMove = source?.plan?.primary === "lower-b" && source.plan.v70Suggested === true &&
+    !sourceHasDateEdits && !dayLogHasRealData(source, fromDate) && !destination?.plan &&
+    !dayLogHasRealData(destination, toDate) && !destination?.dayId &&
+    Object.keys(destination?.lists || {}).length === 0;
+  if (canMove) {
+    const movedPlan = { ...source.plan, setDayType:true, v70Suggested:true, v72Suggested:true };
+    logs[toDate] = { ...(destination || { entries:{} }), dayId:"lower-b", plan:movedPlan };
+    source.plan = { ...source.plan, primary:"", setDayType:false };
+    delete source.dayId;
+    logs[fromDate] = source;
+    saveLogs(logs);
+  }
+  localStorage.setItem(marker, "complete");
+  return canMove;
+}
 function preloadV70StrengthBlock() {
   const marker = "iron-log-v70-block-preloaded";
-  if (localStorage.getItem(marker) === "complete") return false;
+  const thanksgivingShifted = migrateV72ThanksgivingSchedule();
+  if (localStorage.getItem(marker) === "complete") return thanksgivingShifted;
   if (Object.values(logs).some(day => day?.plan?.v70Suggested)) {
     localStorage.setItem(marker, "complete");
-    return false;
+    return thanksgivingShifted;
   }
   const assignments = {
     // Thanksgiving week: Thursday is left free for the possible gym closure.
-    "2026-11-23":"lower", "2026-11-24":"upper", "2026-11-25":"swim", "2026-11-27":"upper-b", "2026-11-29":"lower-b",
+    "2026-11-23":"lower", "2026-11-24":"upper", "2026-11-25":"swim", "2026-11-27":"upper-b", "2026-11-28":"lower-b",
     // Regular weeks: Wednesday lap swim; PT remains on its existing schedule.
     "2026-11-30":"lower", "2026-12-01":"upper", "2026-12-02":"swim", "2026-12-03":"lower-b", "2026-12-04":"upper-b",
     "2026-12-07":"lower", "2026-12-08":"upper", "2026-12-09":"swim", "2026-12-10":"lower-b", "2026-12-11":"upper-b",
@@ -1030,14 +1054,14 @@ function preloadV70StrengthBlock() {
   for (const [date, primary] of Object.entries(assignments)) {
     if (logs[date]?.plan?.primary) continue; // never overwrite an existing plan
     const day = logs[date] || { entries:{} };
-    day.plan = { ...(day.plan || {}), primary, isCommute:false, v70Suggested:true };
+    day.plan = { ...(day.plan || {}), primary, isCommute:false, setDayType:true, v70Suggested:true };
     day.dayId = trackerDayForPlanPrimary(primary) || primary;
     logs[date] = day;
     changed = true;
   }
   if (changed) saveLogs(logs);
   localStorage.setItem(marker, "complete");
-  return changed;
+  return changed || thanksgivingShifted;
 }
 function bankExerciseForPlan(key) {
   const entry = bank[key];
@@ -1173,7 +1197,12 @@ function saveInlinePlan(date, slot, value) {
   if (slot === "primary" || slot === "levelup") syncPlannedLevelUpActivity(date);
   if (!dayLogHasRealData(dayLog, date)) {
     if (mapped) { dayLog.dayId = mapped; dayLog.plan.setDayType = true; }
-    else if (dayLog.plan.setDayType) { delete dayLog.dayId; dayLog.plan.setDayType = false; }
+    else if (slot === "primary" && !value && (dayLog.plan.setDayType || dayLog.plan.v70Suggested || dayLog.plan.v72Suggested)) {
+      // A cleared scheduled activity must not leave the linked day type behind;
+      // selectedDayInfo() would otherwise continue showing it after refresh.
+      delete dayLog.dayId;
+      dayLog.plan.setDayType = false;
+    }
   }
   saveLogs(logs);
   render();

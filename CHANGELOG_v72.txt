@@ -1,0 +1,12 @@
+TOTAL TRANSFORMATION TRACKER — VERSION 72
+
+FIXES AND CLARIFICATIONS
+- Clearing a suggested Primary activity clears the linked day type on that date when there is no completed workout data, preventing the removed activity from returning in Log after refresh.
+- New suggestions mark their linked day type explicitly.
+- Thanksgiving Lower B moves to Saturday, November 28. An existing v70 install shifts only the untouched, uncompleted November 29 suggestion and only if November 28 has no plan or workout data.
+- The project now publishes only the curated site/ directory. The Netlify functions directory is outside the published directory.
+- netlify/functions/data.mjs is the only /api/data handler and is the Exercise Tracker handler. The unrelated legacy daily-health handler is retained under legacy-source/ and is not deployed.
+- The Body Progress handler remains separate at /api/body.
+- The app and service-worker cache are advanced to v72.
+
+The remainder of the holiday block, editable activity behavior, workout history, and existing tracker features are retained.

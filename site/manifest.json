@@ -1,0 +1,15 @@
+{
+  "name": "Toni's Total Training Tracker",
+  "short_name": "Toni's Tracker",
+  "description": "Personal workout tracker with in-app weekly planning and cross-device sync",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FBF3D9",
+  "theme_color": "#FBF3D9",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,9 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 68
+
+- Removed Body Progress from the Exercise Tracker, including its navigation link and dedicated page endpoint.
+- Moved the Strength training history into the Progress tab as a filterable table. The exercise filter appears above the table.
+- Kept the existing individual exercise progress charts below the Strength table.
+- Left the separate Health Tracker unchanged. Existing Body Progress local or remote data is not deleted.
+- Updated the app and offline cache to v68.
+
+Verification: Node.js syntax checks passed for app.js and sw.js. Package contents checked for stale Body Progress links and files. Browser behavior, live sync, Health Tracker behavior, and deployment were not tested.

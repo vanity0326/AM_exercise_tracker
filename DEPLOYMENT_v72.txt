@@ -1,0 +1,9 @@
+Version 72 deployment notes
+
+Deploy from this repository's root through Netlify. The included netlify.toml sets site/ as the publish directory and netlify/functions/ as the functions directory. No build command is required; site/ already contains the deploy-ready static files.
+
+The deploy has one /api/data handler: netlify/functions/data.mjs. It uses the existing iron-log Netlify Blobs store and the existing { library, logs, bank, classes, dayDesignations, marathon } data shape. The legacy daily-health handler is archived outside the functions and publish directories.
+
+The /api/body route remains handled by netlify/functions/body.mjs. The old public/ app is not included in site/ and will not be served by this deployment.
+
+After a deployment, open the app and let sync finish. The Thanksgiving migration moves only the unchanged, uncompleted v70 Lower B suggestion from Nov 29 to Nov 28 if the Saturday date is still unused.

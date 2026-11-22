@@ -1,0 +1,7 @@
+TONI'S TOTAL TRAINING TRACKER — VERSION 67
+
+- Add Exercise duplicate detection now checks the selected date's visible Primary and finisher Log lists. Inactive or stale saved list data for another activity type no longer blocks an addition.
+- Preserve saved Log entries and all existing storage formats; this change only narrows the duplicate check to activities currently rendered in Log.
+- Update the app version and offline cache to v67.
+
+Verification: Node.js syntax check passed for app.js. Browser behavior, live data, cross-device sync, and deployment were not tested.

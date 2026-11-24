@@ -1,0 +1,10 @@
+Version 73 deployment notes
+
+Deploy from the repository root using netlify.toml. Netlify publishes only site/ and uses netlify/functions/ for functions.
+
+Changes:
+- Adds persistent per-workout set extension across all non-zone exercise cards.
+- Shows assigned class sessions in History once that date contains a logged workout entry, including generated-ID additional class sessions.
+- Advances static app and service worker caches to v73.
+
+No data migration is required. Existing logs, routines, classes, settings, and backups retain their existing formats.

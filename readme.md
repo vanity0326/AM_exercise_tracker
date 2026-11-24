@@ -1,4 +1,4 @@
-# AM Exercise Tracker — Version 72
+# AM Exercise Tracker — Version 73
 
 This repository deploys Toni's Exercise Tracker. Netlify serves only the committed `site/` directory and builds functions from `netlify/functions/`.
 
@@ -22,3 +22,11 @@ Deploy from the repository root using the included `netlify.toml`. No build comm
 ## Holiday block
 
 The editable block runs November 23, 2026 through January 3, 2027. It contains four strength sessions per regular week, Wednesday lap-swim suggestions, and holiday adjustments. Existing dated plans are preserved. Completed workouts remain historical records.
+
+
+## Version 73 changes
+
+- Add Set works across the Log, finisher, and superset exercise cards, and the added set count and values persist in the dated workout snapshot.
+- Assigned classes appear in History automatically after a workout entry is logged on that date, including classes saved under generated IDs.
+- Static app and service-worker assets use cache version 73. Existing workout data and settings need no migration.
+

@@ -1,0 +1,8 @@
+TOTAL TRANSFORMATION TRACKER — VERSION 73
+
+FIXES
+- Added an Add Set control to every non-zone exercise card in Log, including finishers and individual superset members. New sets are saved into that dated workout and its frozen exercise snapshot, so they remain after saving and reopening.
+- Assigned classes now transfer to History automatically when the date has a real logged exercise entry, including additional class sessions stored under generated IDs. Manual effort entry is no longer needed to make those completed classes appear.
+- Preserved the v72 data format and advanced the app and service-worker asset cache to v73.
+
+The app continues to use the existing local and remote workout storage, routines, settings, history, and class library.

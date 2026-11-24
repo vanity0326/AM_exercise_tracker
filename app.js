@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v72";
+const APP_VERSION = "v73";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -702,6 +702,10 @@ function classSessionHasCompletion(exerciseId, session, dayLog, date) {
   return session.completed === true || String(exerciseId).startsWith("past_") ||
     (session.actual != null && String(session.actual).trim() !== "") ||
     entryHasData(dayLog?.entries?.[exerciseId]) ||
+    // Some activities allow multiple class records, which have their own
+    // generated IDs instead of the exercise ID. A real workout on that date
+    // completes those assigned classes too, without requiring effort entry.
+    Object.values(dayLog?.entries || {}).some(entry => entryHasData(entry)) ||
     (exerciseId === MARATHON_RUN_CLASS_ID && !!date && runHasData(runRecord(date)));
 }
 function dayLogHasRealData(dayLog, date) {
@@ -2037,6 +2041,12 @@ function renderExerciseCard(ex, sets, tabStart, dayId) {
   });
   card.appendChild(setRow);
 
+  if (!zoneTracked) {
+    const addSetBtn = el(`<button type="button" class="summary-btn add-set-btn">+ Add Set</button>`);
+    addSetBtn.onclick = () => addWorkoutSet(ex, dayId);
+    card.appendChild(addSetBtn);
+  }
+
   const footer = el(`<div class="ex-card-footer"></div>`);
   fillCardFooter(footer, ex, allTopped, dayId);
   card.appendChild(footer);
@@ -2253,6 +2263,34 @@ function updateSet(exId, idx, field, value, listKey = null, exerciseSnapshot = n
 
   refreshExerciseCard(exId, newSets, ex);
   refreshActiveDayPillDone();
+}
+
+function addWorkoutSet(ex, listKey) {
+  const date = state.selectedDate;
+  const dayId = selectedDayInfo()?.id || state.selectedDayId;
+  const snapshotKey = listKey || dayId;
+  const current = logs[date]?.entries?.[ex.id]?.sets || defaultSets(ex);
+  const last = current[current.length - 1] || { weight:null, reps:null };
+  const sets = [...current, { weight:ex.trackType === "weight" ? (last.weight ?? 20) : null, reps:null }];
+
+  if (!logs[date]) logs[date] = { dayId, entries:{} };
+  logs[date].dayId = dayId;
+  logs[date].lists ||= {};
+  logs[date].routineOverrides ||= {};
+  if (!logs[date].routineOverrides[snapshotKey]) {
+    logs[date].lists[snapshotKey] = getExerciseList(date, snapshotKey).map(item => ({...item}));
+    logs[date].routineOverrides[snapshotKey] = true;
+  }
+  const updated = (logs[date].lists[snapshotKey] || []).map(item => item.id === ex.id
+    ? {...item, numSets:sets.length,
+      weights:ex.trackType === "weight" ? [...(item.weights || []), last.weight ?? 20] : item.weights,
+      targets:[...(item.targets || Array.from({length:current.length},(_,i)=>targetForSet(ex,i))), targetForSet(ex,current.length)]}
+    : item);
+  logs[date].lists[snapshotKey] = updated;
+  logs[date].entries[ex.id] = { sets };
+  preserveCompletedExerciseDetails(date);
+  saveLogs(logs);
+  render();
 }
 
 function applyProgression(exId, listKeyHint = null) {

@@ -1,0 +1,11 @@
+TOTAL TRANSFORMATION TRACKER — VERSION 74
+
+SET EDITING FIX
+- Increasing the set count with Edit now also extends an already-started date's saved set array, so the added set appears immediately and remains after save/reopen.
+- Existing set values are preserved. Reducing a template's set count does not delete already logged set data.
+- The Add Set action remains available on all non-zone exercise cards, including the holiday Upper A/B and Lower A/B routines and finishers.
+
+CLASS HISTORY FIX
+- Assigned classes appear in History automatically after the date has a real logged exercise entry, including additional class sessions stored under generated IDs.
+
+The existing storage format and user data are preserved. App and service-worker caches are advanced to v74.

@@ -1,0 +1,9 @@
+Version 74 deployment notes
+
+Deploy from the repository root using netlify.toml. Netlify publishes only site/ and uses netlify/functions/ for functions.
+
+- Increasing set count with Edit now resizes an existing dated workout entry, as well as the exercise snapshot, so the additional set is visible and persists after reopening.
+- The Add Set control is available across the holiday Upper A/B and Lower A/B routines, finishers, and other non-zone exercise cards.
+- Logged set values are retained when changing the routine's target set count.
+- Assigned classes appear in History automatically once real workout data is logged for that date, including additional class sessions stored under generated IDs.
+- App and service-worker assets use cache version 74. No data migration is required.

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v73";
+const APP_VERSION = "v74";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -3610,6 +3610,29 @@ function openEditExerciseModal(dayId, exId) {
 
     const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
     setExerciseList(date, dayId, newList);
+    // A started workout renders from its saved set array, which takes
+    // precedence over the routine definition. Keep that dated snapshot in
+    // step when the user increases the set count in Edit, too.
+    const dayLog = logs[date];
+    const loggedSets = dayLog?.entries?.[exId]?.sets;
+    if (Array.isArray(loggedSets) && numSets > loggedSets.length) {
+      const last = loggedSets[loggedSets.length - 1] || {weight:null, reps:null};
+      dayLog.entries[exId].sets = [...loggedSets, ...Array.from({length:numSets-loggedSets.length}, () => ({
+        weight:trackType === "weight" ? (last.weight ?? weights[loggedSets.length] ?? 20) : null,
+        reps:null,
+      }))];
+    }
+    if (dayLog && (dayLog.routineOverrides?.[dayId] || Array.isArray(loggedSets))) {
+      const activeList = getExerciseList(date, dayId);
+      dayLog.lists ||= {};
+      dayLog.routineOverrides ||= {};
+      dayLog.lists[dayId] = activeList.map(item => item.id === exId ? updatedEx : item);
+      dayLog.routineOverrides[dayId] = true;
+      if (Array.isArray(loggedSets)) {
+        preserveCompletedExerciseDetails(date);
+        saveLogs(logs);
+      }
+    }
     upsertBank(updatedEx);
 
     document.body.removeChild(overlay);

@@ -1,4 +1,4 @@
-# AM Exercise Tracker — Version 73
+# AM Exercise Tracker — Version 74
 
 This repository deploys Toni's Exercise Tracker. Netlify serves only the committed `site/` directory and builds functions from `netlify/functions/`.
 
@@ -29,4 +29,13 @@ The editable block runs November 23, 2026 through January 3, 2027. It contains f
 - Add Set works across the Log, finisher, and superset exercise cards, and the added set count and values persist in the dated workout snapshot.
 - Assigned classes appear in History automatically after a workout entry is logged on that date, including classes saved under generated IDs.
 - Static app and service-worker assets use cache version 73. Existing workout data and settings need no migration.
+
+
+
+## Version 74 changes
+
+- Increasing the set count with Edit also extends an already-started workout's saved set array so added sets persist after reopening.
+- Added sets are supported on holiday Upper A/B and Lower A/B routines, finishers, and other non-zone exercise cards.
+- History includes assigned classes after real workout data is logged for that date, including additional class sessions.
+- Existing data is preserved; no migration is needed.
 

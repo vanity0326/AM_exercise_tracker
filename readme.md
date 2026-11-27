@@ -1,17 +1,15 @@
-# AM Exercise Tracker — Version 76
+# AM Exercise Tracker — Version 77
 
 Netlify publishes the static app from `site/` and functions from `netlify/functions/`.
 
-## Version 76
+## Version 77
 
-- Removes the preloaded holiday block and its holiday-only starter routines; the holiday program remains available as a separate PDF.
-- Clears unstarted plan entries dated November 23, 2026 or later while retaining completed workout data and class history.
-- Makes exercise edit scope explicit. On a date with logged workout data, edits default to “This workout only”; the user can choose the reusable routine for future workouts. Set count changes apply to the chosen scope.
-- Keeps flexible day and finisher routines, optional Exercise Bank designations, templates, supersets, substitutions, progression, workout snapshots, and full JSON backup and restore.
-- Keeps automatic class-to-History transfer, multiple class assignments, dated History, Progress tables/charts, and the existing tracker tools.
-- Replaces the Classes tab status filter with a class type/category filter based on class title, such as Stride or Cooldown. Class statuses remain visible on each record.
-- Preserves timestamped routine and Exercise Bank sync snapshots. Legacy unversioned data is merged conservatively.
-- Removes the Body Progress page from the published Exercise Tracker; the separate `/api/body` endpoint remains available for the separate Health Tracker.
+- Adds a dedicated Routines tab for building reusable exercise lists by day type, including finishers. It supports adding, editing, reordering, removing, and grouping exercises into supersets.
+- Routine Builder edits update reusable templates for future workouts. Logged days remain snapshots, and Log still supports editing an individual workout.
+- Removes Upper B and Lower B from day-type choices. Existing B-day assignments and bank designations map to Upper Lift or Lower Lift while preserving history.
+- Clears dated schedules from November 27, 2026 onward, including per-date routine and finisher lists and incomplete class assignments. Completed set details, notes, and class history are retained.
+- Retains set editing and weight carryover, the Classes type filter, automatic class-to-History transfer, flexible routines, sync, full JSON backup/restore, Progress, and existing tracker tools.
+- Keeps the separate holiday plan available as a PDF. The Body Progress page is not published in the Exercise Tracker; the separate `/api/body` endpoint remains available.
 
 ## Deployment
 

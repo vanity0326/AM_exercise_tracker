@@ -1,0 +1,8 @@
+Version 77
+
+- Added a dedicated Routines tab for reusable day routines and finishers. It supports adding, editing, reordering, removing, and creating supersets.
+- Routine Builder edits update reusable templates for future workouts. Logged days remain snapshots, and Log retains its “This workout only” editing scope.
+- Removed Upper B and Lower B from day-type choices, including saved and synced designations. Existing B-day assignments map to Upper Lift or Lower Lift while preserving dated exercise details and history.
+- Clears dated schedules from November 27, 2026 onward, including per-date routine and finisher lists and incomplete class assignments. Completed set details, notes, and class history remain intact.
+- Retained set editing, weight carryover, the Classes type filter, automatic class-to-History transfer, full backups, and the selected tracker upgrades.
+- Updated app asset URLs and the service-worker cache to v77.

@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v76";
+const APP_VERSION = "v77";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -16,7 +16,8 @@ const DEFAULT_DAY_DESIGNATIONS = [
   { id:"mindful-recovery", label:"Mindful Recovery Day", loggable:true, primaryValue:"mindful-recovery" },
 ];
 function normalizeDayDesignations(input) {
-  const saved = Array.isArray(input) ? input.filter(d => d && d.id && d.label) : [];
+  const retiredDayTypes = new Set(["upper-b", "lower-b"]);
+  const saved = Array.isArray(input) ? input.filter(d => d && d.id && d.label && !retiredDayTypes.has(d.id)) : [];
   const byId = new Map(saved.map(d => [d.id, { ...d }]));
   DEFAULT_DAY_DESIGNATIONS.forEach(defaultDay => {
     if (!byId.has(defaultDay.id)) byId.set(defaultDay.id, { ...defaultDay });
@@ -37,7 +38,12 @@ function mergeDayDesignationLists(remoteList, localList, preferLocal) {
   return normalizeDayDesignations([...merged.values()]);
 }
 function loadDayDesignations() {
-  try { return normalizeDayDesignations(JSON.parse(localStorage.getItem(LS_DAY_DESIGNATIONS) || "null")); }
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_DAY_DESIGNATIONS) || "null");
+    const normalized = normalizeDayDesignations(raw);
+    if (JSON.stringify(raw) !== JSON.stringify(normalized)) localStorage.setItem(LS_DAY_DESIGNATIONS, JSON.stringify(normalized));
+    return normalized;
+  }
   catch { return normalizeDayDesignations(null); }
 }
 let dayDesignations = loadDayDesignations();
@@ -409,12 +415,14 @@ let pushTimer = null;
 let pushChain = Promise.resolve(); // serialize writes so an older in-flight push cannot finish last
 let forceRemoteReplace = false; // set only by an explicit full-backup restore
 let suppressPush = false; // true while applying a just-pulled remote copy, so we don't immediately push it back
+let remoteDataHydrated = false;
 
 async function pullRemote(isInitial) {
   try {
     const res = await fetch(REMOTE_ENDPOINT, { cache: "no-store" });
     if (!res.ok) throw new Error("pull failed: " + res.status);
     const remote = await res.json();
+    remoteDataHydrated = true;
     if (remote && (remote.library || remote.logs || remote.bank || remote.classes || remote.dayDesignations)) {
       // If this device wrote something locally more recently than the remote
       // copy was saved, trust the local copy and push it up instead of
@@ -447,13 +455,14 @@ async function pullRemote(isInitial) {
         localStorage.setItem(LS_BANK_UPDATED_AT, String(bankUpdatedAt));
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
-        if (runV76Migrations()) {
+        if (runV77Migrations()) {
           localStorage.setItem(LS_LIB, JSON.stringify(library));
           localStorage.setItem(LS_LOGS, JSON.stringify(logs));
           localStorage.setItem(LS_BANK, JSON.stringify(bank));
         }
         setSyncStatus("syncing");
         pushRemote();
+        render();
         return;
       }
       const localClassesBeforePull = Array.isArray(classes) ? classes : [];
@@ -483,7 +492,7 @@ async function pullRemote(isInitial) {
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
       if (migrateRoutineTemplates()) repairRemoteWorkoutData = true;
-      if (runV76Migrations()) repairRemoteWorkoutData = true;
+      if (runV77Migrations()) repairRemoteWorkoutData = true;
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
         // An older backend or stale/empty remote payload must not wipe classes
         // already stored on this device. Preserve them and repair remote below.
@@ -520,15 +529,17 @@ async function pullRemote(isInitial) {
     } else if (isInitial || !Object.keys(bank).length) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
-      runV76Migrations();
+      runV77Migrations();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
+      render();
     } else {
       setSyncStatus("synced");
     }
   } catch (e) {
-    runV76Migrations();
+    runV77Migrations();
     setSyncStatus(navigator.onLine ? "error" : "offline");
+    render();
   }
 }
 
@@ -548,7 +559,7 @@ function pushRemote() {
       const res = await fetch(REMOTE_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library, librarySnapshotVersion:76, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
+        body: JSON.stringify({ library, librarySnapshotVersion:77, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
           replaceAll: forceRemoteReplace }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
@@ -579,6 +590,7 @@ let state = {
   selectedDayId: null,
   progressExId: null,
   editScope: "routine",
+  routineBuilderListKey: "upper",
   routineNotice: "",
   runCalIdx: null, // which calendar week the Run tab is showing (null = current)
 };
@@ -813,6 +825,7 @@ function render() {
   if (state.tab === "history") app.appendChild(renderHistory());
   if (state.tab === "classes") app.appendChild(renderClasses());
   if (state.tab === "progress") app.appendChild(renderProgress());
+  if (state.tab === "routines") app.appendChild(renderRoutines());
 
   if (state.tab === "today" && selectedDayInfo()) app.appendChild(renderFab());
 }
@@ -859,11 +872,42 @@ function setSyncStatus(next) {
 
 function renderTabs() {
   const wrap = el(`<div class="tabs"></div>`);
-  [["overview", "AT A GLANCE"], ["plan", "PLAN"], ["today", "LOG"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
+  [["overview", "AT A GLANCE"], ["plan", "PLAN"], ["today", "LOG"], ["routines", "ROUTINES"], ["run", "RUN"], ["history", "HISTORY"], ["classes", "CLASSES"], ["progress", "PROGRESS"]].forEach(([id, label]) => {
     const btn = el(`<button class="tab-btn ${state.tab === id ? "active" : ""}">${label}</button>`);
     btn.onclick = () => { state.tab = id; render(); };
     wrap.appendChild(btn);
   });
+  return wrap;
+}
+
+function renderRoutines() {
+  const wrap = el(`<main class="routines-page"><h2>Routine Builder</h2><p class="field-hint">Build reusable exercise lists for each day type and finisher. Changes here update the saved routine for future workouts. In Log, you can still change an individual day without changing its routine.</p><div class="form-row"><label for="routine-builder-list">Routine to build</label><select id="routine-builder-list"></select></div><div class="modal-actions"><button class="btn-primary" id="routine-builder-add">+ Add exercise</button><button class="btn-secondary" id="routine-builder-group">🔗 Create Superset</button></div><div id="routine-builder-items"></div></main>`);
+  const selector = wrap.querySelector("#routine-builder-list");
+  const listKeys = dayDesignations.filter(day => day.loggable).flatMap(day => [day.id, finisherKey(day.id)]);
+  if (!listKeys.includes(state.routineBuilderListKey)) state.routineBuilderListKey = listKeys[0] || "upper";
+  listKeys.forEach(key => {
+    const base = key.replace(/_finisher$/, "");
+    const label = dayDesignationLabel(base) + (key.endsWith("_finisher") ? " · Finisher" : " · Routine");
+    selector.appendChild(el(`<option value="${safeText(key)}">${safeText(label)}</option>`));
+  });
+  selector.value = state.routineBuilderListKey;
+  selector.onchange = () => { state.routineBuilderListKey = selector.value; render(); };
+  const listKey = state.routineBuilderListKey;
+  const items = wrap.querySelector("#routine-builder-items");
+  const list = Array.isArray(library[listKey]) ? library[listKey] : [];
+  if (!list.length) items.appendChild(el(`<div class="empty-state">This saved routine is empty. Add exercises here; the day remains editable in Log.</div>`));
+  list.forEach((ex, index) => {
+    const row = el(`<article class="hist-card routine-builder-row"><div class="hist-card-top"><b>${safeText(ex.name)}</b><span>${exNumSets(ex)} sets</span></div><div class="field-hint">Targets: ${safeText(targetLabelFor(ex))}${ex.trackType === "weight" ? ` · Weights: ${safeText((ex.weights || []).join(" / "))} lbs` : ""}${ex.groupId ? " · Superset" : ""}</div><div class="cl-actions"><button class="btn-secondary routine-edit">Edit</button><button class="btn-secondary routine-up" ${index===0?"disabled":""}>Move up</button><button class="btn-secondary routine-down" ${index===list.length-1?"disabled":""}>Move down</button><button class="btn-secondary routine-remove">Remove</button></div></article>`);
+    row.querySelector(".routine-edit").onclick = () => openEditExerciseModal(listKey, ex.id, true);
+    row.querySelector(".routine-up").onclick = () => moveExerciseInList(listKey, ex.id, -1, true);
+    row.querySelector(".routine-down").onclick = () => moveExerciseInList(listKey, ex.id, 1, true);
+    row.querySelector(".routine-remove").onclick = () => removeExerciseFromDay(listKey, ex.id, true);
+    items.appendChild(row);
+  });
+  wrap.querySelector("#routine-builder-add").onclick = () => openAddExerciseModal(listKey, true);
+  const groupButton = wrap.querySelector("#routine-builder-group");
+  groupButton.disabled = list.filter(ex => !ex.groupId).length < 2;
+  groupButton.onclick = () => openGroupModal(listKey, true);
   return wrap;
 }
 
@@ -889,7 +933,7 @@ function weekPrimaryOptions() {
 }
 const WEEK_LEVELUP_OPTIONS = [["", "— Choose from Exercise Bank —"]];
 const PLAN_TO_TRACKER_DAY = {
-  upper:"upper", "upper-b":"upper-b", lower:"lower", "lower-b":"lower-b", core:"core", mob:"mobility", pilates:"pilates",
+  upper:"upper", "upper-b":"upper", lower:"lower", "lower-b":"lower", core:"core", mob:"mobility", pilates:"pilates",
   rest:"rest", cardio:"cardio", swim:"cardio", ellip:"cardio", "cardio-class":"cardio",
   walk:"cardio", treadmill:"cardio", run:"cardio", fullbody:"upper",
 };
@@ -1012,21 +1056,41 @@ function removeHolidayBlockDefaults() {
     libraryChanged = true;
     changed = true;
   }
-  const alternates = new Set(["upper-b", "lower-b"]), used = new Set();
+  const retiredDayTypes = {"upper-b":"upper", "lower-b":"lower"};
   Object.entries(logs || {}).forEach(([date, day]) => {
-    if (alternates.has(day?.dayId) && dayLogHasRealData(day, date)) used.add(day.dayId);
-    if (alternates.has(day?.plan?.primary) && !day.plan.v70Suggested && !day.plan.v72Suggested) used.add(day.plan.primary);
-  });
-  Object.values(library || {}).flat().forEach(ex => { if (alternates.has(ex?.dayDesignation)) used.add(ex.dayDesignation); });
-  Object.values(bank || {}).forEach(ex => { if (alternates.has(ex?.dayDesignation)) used.add(ex.dayDesignation); });
-  for (const id of alternates) {
-    const generatedLabel = dayDesignations.find(d => d.id === id)?.label === (id === "upper-b" ? "Upper B" : "Lower B");
-    const hasRoutine = Array.isArray(library[id]) && library[id].length > 0;
-    if (generatedLabel && !used.has(id) && !hasRoutine) {
-      dayDesignations = dayDesignations.filter(d => d.id !== id);
-      designationsChanged = true;
-      changed = true;
+    if (!day) return;
+    const oldDayId = day.dayId;
+    if (retiredDayTypes[oldDayId]) { day.dayId = retiredDayTypes[oldDayId]; logsChanged = true; changed = true; }
+    if (retiredDayTypes[day.plan?.primary]) {
+      day.plan.primary = retiredDayTypes[day.plan.primary];
+      if (day.plan.primaryName === "Upper B" || day.plan.primaryName === "Lower B") delete day.plan.primaryName;
+      logsChanged = true; changed = true;
     }
+    if (retiredDayTypes[day.plan?.primaryDayId]) { day.plan.primaryDayId = retiredDayTypes[day.plan.primaryDayId]; logsChanged = true; changed = true; }
+    for (const [oldId, nextId] of Object.entries(retiredDayTypes)) {
+      if (day.lists?.[oldId] && !day.lists[nextId]) {
+        day.lists[nextId] = day.lists[oldId];
+        if (day.routineOverrides?.[oldId]) { day.routineOverrides[nextId] = true; }
+        logsChanged = true; changed = true;
+      }
+      if (Array.isArray(day.planListKeys) && day.planListKeys.includes(oldId) && !day.planListKeys.includes(nextId)) {
+        day.planListKeys = day.planListKeys.map(key => key === oldId ? nextId : key);
+        logsChanged = true; changed = true;
+      }
+    }
+  });
+  Object.values(library || {}).flat().forEach(ex => {
+    if (!retiredDayTypes[ex?.dayDesignation]) return;
+    ex.dayDesignation = retiredDayTypes[ex.dayDesignation]; libraryChanged = true; changed = true;
+  });
+  Object.values(bank || {}).forEach(ex => {
+    if (!retiredDayTypes[ex?.dayDesignation]) return;
+    ex.dayDesignation = retiredDayTypes[ex.dayDesignation]; bankChanged = true; changed = true;
+  });
+  const withoutRetiredTypes = dayDesignations.filter(d => !retiredDayTypes[d.id]);
+  if (withoutRetiredTypes.length !== dayDesignations.length) {
+    dayDesignations = withoutRetiredTypes;
+    designationsChanged = true; changed = true;
   }
   if (designationsChanged) {
     dayDesignations = normalizeDayDesignations(dayDesignations);
@@ -1039,28 +1103,37 @@ function removeHolidayBlockDefaults() {
   localStorage.setItem(marker, "complete");
   return changed;
 }
-function clearUnstartedPlansFromV76() {
-  const marker = "iron-log-v76-plans-cleared-from-2026-11-23";
+function clearPlansFromV77(localAuthoritative = false) {
+  const marker = "iron-log-v77-schedules-cleared-from-2026-11-27";
   if (localStorage.getItem(marker) === "complete") return false;
   let changed = false;
   for (const [date, day] of Object.entries(logs || {})) {
-    if (date < "2026-11-23" || !day || dayLogHasRealData(day, date)) continue;
-    const hasPlanData = !!day.plan || !!day.dayId || !!day.lists || !!day.routineOverrides || !!day.planListKeys;
-    if (!hasPlanData) continue;
-    delete day.plan;
-    delete day.dayId;
-    delete day.lists;
-    delete day.routineOverrides;
-    delete day.planListKeys;
-    changed = true;
+    if (date < "2026-11-27" || !day) continue;
+    const hasHistory = dayLogHasRealData(day, date);
+    if (hasHistory) preserveCompletedExerciseDetails(date);
+    if (day.plan) { delete day.plan; changed = true; }
+    for (const key of ["lists", "routineOverrides", "planListKeys"]) {
+      if (day[key] !== undefined) { delete day[key]; changed = true; }
+    }
+    if (day.classSessions) {
+      for (const [id, session] of Object.entries(day.classSessions)) {
+        if (!classSessionHasCompletion(id, session, day, date)) { delete day.classSessions[id]; changed = true; }
+      }
+      if (!Object.keys(day.classSessions).length) { delete day.classSessions; changed = true; }
+    }
+    if (!hasHistory) {
+      if (day.dayId !== undefined) { delete day.dayId; changed = true; }
+      if (day.entries && Object.keys(day.entries).length) { day.entries = {}; changed = true; }
+      if (day.completedExercises && Object.keys(day.completedExercises).length) { day.completedExercises = {}; changed = true; }
+    }
   }
   if (changed) saveLogs(logs);
-  localStorage.setItem(marker, "complete");
+  if (remoteDataHydrated || localAuthoritative) localStorage.setItem(marker, "complete");
   return changed;
 }
-function runV76Migrations() {
+function runV77Migrations(localAuthoritative = false) {
   const holidayChanged = removeHolidayBlockDefaults();
-  const plansChanged = clearUnstartedPlansFromV76();
+  const plansChanged = clearPlansFromV77(localAuthoritative);
   return holidayChanged || plansChanged;
 }
 function bankExerciseForPlan(key) {
@@ -1309,7 +1382,7 @@ function overviewDayLabel(date) {
   const day = logs[date] || {};
   const plannedId = day.plan?.primary === "run" ? marathonDesignationId() : {upper:"upper", "upper-b":"upper-b", lower:"lower", "lower-b":"lower-b", core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
-  const names = {upper:"Upper Lift Day","upper-b":"Upper B Day",lower:"Lower Lift Day","lower-b":"Lower B Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
+  const names = {upper:"Upper Lift Day","upper-b":"Upper Lift Day",lower:"Lower Lift Day","lower-b":"Lower Lift Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
   const extra = day.plan?.levelup ? planOptionLabel(day.plan.levelup, day.plan) : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
@@ -1723,7 +1796,7 @@ function renderToday() {
 
 // What the weekly plan has down for this date (if anything).
 const PLAN_LABELS = {
-  swim: "Swim", ellip: "Elliptical", upper: "Upper Lift", "upper-b": "Upper B", lower: "Lower Lift", "lower-b": "Lower B", fullbody: "Full Body",
+  swim: "Swim", ellip: "Elliptical", upper: "Upper Lift", "upper-b": "Upper Lift", lower: "Lower Lift", "lower-b": "Lower Lift", fullbody: "Full Body",
   core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio", walk: "Walking",
   treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
@@ -1864,9 +1937,9 @@ function generateGroupId() {
   return "grp_" + Math.random().toString(36).slice(2, 8);
 }
 
-function openGroupModal(dayId) {
+function openGroupModal(dayId, routineBuilder = false) {
   const date = state.selectedDate;
-  const dayExercises = getExerciseList(date, dayId);
+  const dayExercises = routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId);
   const ungrouped = dayExercises.filter((e) => !e.groupId);
   if (ungrouped.length < 2) {
     alert("You need at least 2 ungrouped exercises in this routine to create a superset.");
@@ -1877,11 +1950,11 @@ function openGroupModal(dayId) {
   const modal = el(`
     <div class="modal">
       <h3>Create Superset</h3>
-      <div class="field-hint" style="margin-bottom:14px;">Pick 2 or more ungrouped exercises. Each exercise can belong to only one superset. You can save the group with the routine or use it for this workout only.</div>
+      <div class="field-hint" style="margin-bottom:14px;">Pick 2 or more ungrouped exercises. Each exercise can belong to only one superset. ${routineBuilder ? "This updates the reusable routine only; dated workouts remain editable." : "You can save the group with the routine or use it for this workout only."}</div>
       <div id="group-check-list" class="check-grid one-col"></div>
       <div class="modal-actions">
         <button class="btn-secondary" id="group-cancel-btn">Cancel</button>
-        <button class="btn-secondary" id="group-save-today-btn">This workout only</button>
+        ${routineBuilder ? "" : '<button class="btn-secondary" id="group-save-today-btn">This workout only</button>'}
         <button class="btn-primary" id="group-save-btn">Save to routine</button>
       </div>
     </div>
@@ -1903,14 +1976,15 @@ function openGroupModal(dayId) {
     const selected = [...list.querySelectorAll("input:checked")].map((c) => c.value);
     if (selected.length < 2) { alert("Pick at least 2 exercises."); return; }
     const groupId = generateGroupId();
-    const updated = getExerciseList(date, dayId).map((e) => selected.includes(e.id) ? { ...e, groupId } : e);
-    state.editScope = scope;
+    const source = routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId);
+    const updated = source.map((e) => selected.includes(e.id) ? { ...e, groupId } : e);
+    if (!routineBuilder) state.editScope = scope;
     setExerciseList(date, dayId, updated, scope);
     document.body.removeChild(overlay);
     render();
   };
   modal.querySelector("#group-save-btn").onclick = () => saveGroup("routine");
-  modal.querySelector("#group-save-today-btn").onclick = () => saveGroup("today");
+  if (!routineBuilder) modal.querySelector("#group-save-today-btn").onclick = () => saveGroup("today");
 
   document.body.appendChild(overlay);
   trapFocus(overlay);
@@ -2166,9 +2240,9 @@ function clearSingleDay(date) {
   render();
 }
 
-function moveExerciseInList(listKey, exId, direction) {
+function moveExerciseInList(listKey, exId, direction, routineBuilder = false) {
   const date = state.selectedDate;
-  const list = [...getExerciseList(date, listKey)];
+  const list = [...(routineBuilder ? (library[listKey] || []) : getExerciseList(date, listKey))];
   const idx = list.findIndex((e) => e.id === exId);
   if (idx === -1) return;
   const groupId = list[idx].groupId || null;
@@ -2187,23 +2261,22 @@ function moveExerciseInList(listKey, exId, direction) {
   const neighborStart = remaining.findIndex(e => neighborIds.has(e.id));
   const insertAt = direction < 0 ? neighborStart : neighborStart + neighborBlock.length;
   remaining.splice(insertAt, 0, ...block);
-  setExerciseList(date, listKey, remaining);
+  setExerciseList(date, listKey, remaining, routineBuilder ? "routine" : undefined);
   render();
 }
 
-function removeExerciseFromDay(dayId, exId) {
+function removeExerciseFromDay(dayId, exId, routineBuilder = false) {
   const date = state.selectedDate;
-  const ex = getExerciseList(date, dayId).find(item => item.id === exId) || allExercises()[exId];
+  const sourceList = routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId);
+  const ex = sourceList.find(item => item.id === exId) || allExercises()[exId];
   if (!ex) return;
+  const scopeOptions = routineBuilder
+    ? `<option value="routine">Remove from the saved routine</option><option value="archive">Archive from Exercise Bank</option><option value="delete">Permanently delete from Exercise Bank</option>`
+    : `<option value="today">Remove from this workout only</option><option value="routine">Remove from the saved routine</option><option value="archive">Archive from Exercise Bank</option><option value="delete">Permanently delete from Exercise Bank</option>`;
   const overlay = el(`<div class="modal-overlay"></div>`);
   const modal = el(`<div class="modal"><h3>Remove ${safeText(ex.name)}</h3>
     <div class="form-row"><label for="remove-scope">What would you like to do?</label>
-      <select id="remove-scope">
-        <option value="today">Remove from this workout only</option>
-        <option value="routine">Remove from the saved routine</option>
-        <option value="archive">Archive from Exercise Bank</option>
-        <option value="delete">Permanently delete from Exercise Bank</option>
-      </select>
+      <select id="remove-scope">${scopeOptions}</select>
     </div>
     <div class="field-hint">Workout history is retained. Permanent deletion cannot be undone.</div>
     <div class="modal-actions"><button class="btn-secondary" id="remove-cancel">Cancel</button><button class="btn-primary" id="remove-confirm">Continue</button></div>
@@ -2220,13 +2293,13 @@ function removeExerciseFromDay(dayId, exId) {
       delete logs[date].plan.levelupName; delete logs[date].plan.levelupExerciseId;
       delete logs[date].plan.levelupExerciseKey; delete logs[date].plan.levelupExerciseListKey;
     }
-    const updated = getExerciseList(date, dayId).filter(e => e.id !== exId);
+    const updated = (routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId)).filter(e => e.id !== exId);
     if (ex.groupId) {
       const remaining = updated.filter(e => e.groupId === ex.groupId);
       if (remaining.length === 1) { const i = updated.findIndex(e => e.id === remaining[0].id); updated[i] = {...updated[i], groupId:undefined}; }
     }
     if (choice === 'today' || choice === 'routine') {
-      state.editScope = choice;
+      if (!routineBuilder) state.editScope = choice;
       setExerciseList(date, dayId, updated, choice);
       if (choice === 'routine' && !dayId.endsWith('_finisher')) {
         const key = bankKey(ex.name || "");
@@ -2472,8 +2545,8 @@ function openBackupRestoreModal() {
     library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; libraryUpdatedAt=Math.max(Date.now(),Number(parsed.libraryUpdatedAt)||0); logs=parsed.logs || {}; bank=parsed.bank || {}; bankUpdatedAt=Math.max(Date.now(),Number(parsed.bankUpdatedAt)||0); classes=Array.isArray(parsed.classes)?parsed.classes:[];
     if (Array.isArray(parsed.dayDesignations)) { dayDesignations=normalizeDayDesignations(parsed.dayDesignations); refreshDayDefinitions(); }
     if (parsed.marathon) marathon={...structuredClone(DEFAULT_MARATHON),...parsed.marathon};
-    localStorage.removeItem("iron-log-v76-plans-cleared-from-2026-11-23");
-    runV76Migrations();
+    localStorage.removeItem("iron-log-v77-schedules-cleared-from-2026-11-27");
+    runV77Migrations(true);
     localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LIBRARY_UPDATED_AT,String(libraryUpdatedAt)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank)); localStorage.setItem(LS_BANK_UPDATED_AT,String(bankUpdatedAt));
     localStorage.setItem(LS_CLASSES,JSON.stringify(classes)); localStorage.setItem(LS_DAY_DESIGNATIONS,JSON.stringify(dayDesignations)); localStorage.setItem(LS_MARATHON,JSON.stringify(marathon));
     state.selectedDate = todayISO(); state.selectedDayId = null; state.editScope = "routine"; state.tab = "overview";
@@ -3249,7 +3322,7 @@ function openBankManagerModal(onClose) {
   trapFocus(overlay);
 }
 
-function openAddExerciseModal(explicitListKey) {
+function openAddExerciseModal(explicitListKey, routineBuilder = false) {
   const overlay = el(`<div class="modal-overlay"></div>`);
   const bankEntries = Object.values(bank).sort((a, b) => a.name.localeCompare(b.name));
   const modal = el(`
@@ -3317,7 +3390,9 @@ function openAddExerciseModal(explicitListKey) {
     </div>
   `);
   const bankDaySelect = modal.querySelector("#ex-bank-day");
-  const preferredDay = selectedDayInfo();
+  const preferredDay = routineBuilder
+    ? DAYS.find(day => day.id === explicitListKey?.replace(/_finisher$/, ""))
+    : selectedDayInfo();
   const defaultDayId = preferredDay && preferredDay.loggable ? preferredDay.id : exerciseDays()[0]?.id;
   function refreshBankDayOptions(selected = "") {
     bankDaySelect.innerHTML = `<option value="">Unassigned</option>` + dayDesignations.map(d => `<option value="${safeText(d.id)}">${safeText(d.label)}</option>`).join("");
@@ -3453,20 +3528,20 @@ function openAddExerciseModal(explicitListKey) {
     // Only lists rendered in this date's Log are evidence of an existing
     // activity. Other stored list keys can be stale or belong to a different
     // activity type, so scanning every saved list can report invisible items.
-    const visibleDayId = selectedDayInfo()?.id || dayId;
-    const primaryNames = new Set(getExerciseList(date, visibleDayId).map(ex => bankKey(ex.name || "")).filter(Boolean));
-    const visibleExercises = [
-      ...getExerciseList(date, visibleDayId),
-      ...getExerciseList(date, finisherKey(visibleDayId)).filter(ex => !primaryNames.has(bankKey(ex.name || ""))),
-    ];
+    const visibleDayId = routineBuilder ? dayId.replace(/_finisher$/, "") : (selectedDayInfo()?.id || dayId);
+    const primaryList = routineBuilder ? (library[visibleDayId] || []) : getExerciseList(date, visibleDayId);
+    const finisherList = routineBuilder ? (library[finisherKey(visibleDayId)] || []) : getExerciseList(date, finisherKey(visibleDayId));
+    const primaryNames = new Set(primaryList.map(ex => bankKey(ex.name || "")).filter(Boolean));
+    const visibleExercises = [...primaryList, ...finisherList.filter(ex => !primaryNames.has(bankKey(ex.name || "")))];
     const alreadyOnDate = visibleExercises.some(ex => bankKey(ex.name || "") === bankKey(name));
     if (alreadyOnDate) {
-      alert(`${name} is already on this date's Log. The existing activity remains in place.`);
+      alert(`${name} is already in this ${routineBuilder ? "routine" : "date's Log"}. The existing activity remains in place.`);
       document.body.removeChild(overlay);
       render();
       return;
     }
-    setExerciseList(date, dayId, [...getExerciseList(date, dayId), newEx]);
+    const baseList = routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId);
+    setExerciseList(date, dayId, [...baseList, newEx], routineBuilder ? "routine" : undefined);
 
     if (!explicitListKey) state.selectedDayId = dayId;
     document.body.removeChild(overlay);
@@ -3482,9 +3557,10 @@ function openAddExerciseModal(explicitListKey) {
 // Lets you adjust an existing exercise's name, weights, and per-set targets
 // in place — same fields as Add Exercise, minus the bank picker and day
 // (day stays fixed; delete + re-add if you want it under a different day).
-function openEditExerciseModal(dayId, exId) {
+function openEditExerciseModal(dayId, exId, routineBuilder = false) {
   const date = state.selectedDate;
-  const ex = getExerciseList(date, dayId).find((e) => e.id === exId);
+  const sourceList = routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId);
+  const ex = sourceList.find((e) => e.id === exId);
   if (!ex) return;
 
   const overlay = el(`<div class="modal-overlay"></div>`);
@@ -3509,7 +3585,7 @@ function openEditExerciseModal(dayId, exId) {
         <label>Number of sets</label>
         <input type="number" id="edit-num-sets" min="1" style="width:80px" />
       </div>
-      <div class="form-row">
+      <div class="form-row" id="edit-scope-row">
         <label>Apply this edit to</label>
         <select id="edit-scope">
           <option value="routine">Reusable routine and future workouts</option>
@@ -3581,7 +3657,8 @@ function openEditExerciseModal(dayId, exId) {
   customUnitInput.value = ex.customUnit || "";
   const n0 = exNumSets(ex);
   numSetsInput.value = n0;
-  editScopeSelect.value = dayLogHasRealData(logs[date], date) ? "today" : (state.editScope === "today" ? "today" : "routine");
+  if (routineBuilder) modal.querySelector("#edit-scope-row").hidden = true;
+  editScopeSelect.value = routineBuilder ? "routine" : (dayLogHasRealData(logs[date], date) ? "today" : (state.editScope === "today" ? "today" : "routine"));
   const starting = defaultSets(ex, date);
   const w0 = Array.from({length:n0},(_,i)=>starting[i]?.weight ?? 20);
   setNumberRow(weightsRow, n0, w0, labelFnFor(trackSelect.value));
@@ -3637,9 +3714,9 @@ function openEditExerciseModal(dayId, exId) {
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
     const updatedEx = { ...ex, name, trackType, type, numSets, weights, targets, customUnit };
 
-    const scope = editScopeSelect.value === "today" ? "today" : "routine";
-    state.editScope = scope;
-    const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
+    const scope = routineBuilder ? "routine" : (editScopeSelect.value === "today" ? "today" : "routine");
+    if (!routineBuilder) state.editScope = scope;
+    const newList = (routineBuilder ? (library[dayId] || []) : getExerciseList(date, dayId)).map((e) => (e.id === exId ? updatedEx : e));
     setExerciseList(date, dayId, newList, scope);
     // Routine edits affect future sessions; only a current-workout edit resizes
     // this date's saved set array. Completed values are never discarded.
@@ -3704,6 +3781,7 @@ if (navigator.onLine) {
   pullRemote(true).then(() => runOneTimeCleanupIfNeeded());
 } else {
   setSyncStatus("offline");
-  runV76Migrations();
+  runV77Migrations();
   runOneTimeCleanupIfNeeded();
+  render();
 }

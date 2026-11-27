@@ -1,0 +1,9 @@
+Version 77 deployment notes
+
+1. Deploy this project root to Netlify.
+2. Keep `site/` as the publish directory and `netlify/functions/` as the functions directory, as configured in `netlify.toml`.
+3. Keep the existing shared Netlify Blobs store. Version 77 migrates existing records in place.
+4. On first v77 load, dated schedules from November 27, 2026 onward are cleared, including per-date routine and finisher lists and incomplete class assignments. Completed set details, notes, and class history are preserved.
+5. Upper B and Lower B are removed from day types. Existing records and bank designations are mapped to Upper Lift and Lower Lift.
+6. The Routines tab edits reusable templates for future workouts. Logged days remain editable independently.
+7. The published Exercise Tracker does not include `body.html`; retain `netlify/functions/body.mjs` for the separate Health Tracker endpoint.

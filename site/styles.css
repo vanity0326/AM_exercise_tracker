@@ -1108,7 +1108,7 @@ select {
 .log-week-balance{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:11px;border-top:1px solid #d9e4db}.log-week-balance>strong{font-size:13px;color:#254c3a}.log-week-counts{display:flex;gap:7px;flex-wrap:wrap}.log-week-count{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:99px;background:#eaf2eb;font-size:12px}.log-week-count strong{color:#1d6946;font-size:14px}
 @media(max-width:720px){.log-week-plan{padding:13px}.log-week-head{flex-direction:column}.log-week-controls{align-self:stretch;justify-content:space-between}.log-week-days{grid-template-columns:repeat(7,minmax(150px,1fr))}}
 /* v53.2 date-driven responsive layout: use desktop width and wrap controls on phones. */
-.tabs{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:visible}
+.tabs{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));overflow:visible}
 .tab-btn{min-width:0;white-space:normal;min-height:44px}
 .day-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:visible}
 .day-pill{min-width:0;flex-shrink:1;padding-left:6px;padding-right:6px}

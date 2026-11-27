@@ -1,41 +1,17 @@
-# AM Exercise Tracker — Version 74
+# AM Exercise Tracker — Version 75
 
-This repository deploys Toni's Exercise Tracker. Netlify serves only the committed `site/` directory and builds functions from `netlify/functions/`.
+Netlify publishes the static app from `site/` and functions from `netlify/functions/`.
 
-## Deployment layout
+## Version 75
 
-- `site/` contains the selected static Exercise Tracker pages and assets.
-- `netlify/functions/data.mjs` is the only handler for `/api/data`. It stores the exercise tracker snapshot in the `iron-log` Netlify Blobs store.
-- `netlify/functions/body.mjs` handles the separate Body Progress endpoint `/api/body`.
-- `legacy-source/daily-health-data-handler.mjs` is retained for reference only; it is outside both the published site and functions directory.
-- The old `public/` tracker and other source files are not published.
+- Removes the preloaded holiday block and its Upper A/B and Lower A/B starter routines. The holiday plan is maintained separately as a PDF.
+- Safely removes untouched, system-generated holiday suggestions and starter routines on existing installs. Edited dates, workout logs, completed exercise snapshots, user routines, class records, settings, and bank data are retained.
+- Keeps flexible day and finisher routines, optional Exercise Bank designations, templates, routine-versus-today edits, supersets, substitutions, workout snapshots, progression, and custom exercise/set editing.
+- Keeps automatic class-to-History transfer, multiple class assignments, dated History, Progress tables/charts, full JSON backup and restore, and the existing tracker tools.
+- Saves timestamped routine and Exercise Bank snapshots so v75 edits and intentional removals survive sync. Legacy unversioned content is merged conservatively.
+- Carries forward saved weights when opening a workout or re-adding a known exercise. Added sets and edits persist to the dated workout.
+- Removes the Body Progress page from the published Exercise Tracker; the separate `/api/body` endpoint remains available for the separate Health Tracker.
 
-Deploy from the repository root using the included `netlify.toml`. No build command is needed because `site/` is already populated. Keep `site/` as the publish directory and `netlify/functions/` as the functions directory.
+## Deployment
 
-## Version 72 changes
-
-- Clearing a suggested activity clears its auto-assigned day type when the date has no completed workout data.
-- The Thanksgiving Lower B suggestion moves from Sunday, November 29, to Saturday, November 28. On an existing v70 install, the migration moves only the untouched, uncompleted v70 suggestion and only when Saturday has no plan or workout data.
-- App and service-worker cache versions are updated to v72.
-- The data endpoint is unambiguous, and function source files are kept outside the published directory.
-
-## Holiday block
-
-The editable block runs November 23, 2026 through January 3, 2027. It contains four strength sessions per regular week, Wednesday lap-swim suggestions, and holiday adjustments. Existing dated plans are preserved. Completed workouts remain historical records.
-
-
-## Version 73 changes
-
-- Add Set works across the Log, finisher, and superset exercise cards, and the added set count and values persist in the dated workout snapshot.
-- Assigned classes appear in History automatically after a workout entry is logged on that date, including classes saved under generated IDs.
-- Static app and service-worker assets use cache version 73. Existing workout data and settings need no migration.
-
-
-
-## Version 74 changes
-
-- Increasing the set count with Edit also extends an already-started workout's saved set array so added sets persist after reopening.
-- Added sets are supported on holiday Upper A/B and Lower A/B routines, finishers, and other non-zone exercise cards.
-- History includes assigned classes after real workout data is logged for that date, including additional class sessions.
-- Existing data is preserved; no migration is needed.
-
+Deploy from the repository root with the included `netlify.toml`. No build command is required: `site/` is the populated publish directory. Keep `netlify/functions/` as the functions directory; `/api/data` is implemented by `data.mjs` and `/api/body` remains a separate handler.

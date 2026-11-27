@@ -1,0 +1,10 @@
+Version 75
+
+- Removed the preloaded holiday block, holiday-only day suggestions, and holiday starter routines. The separate holiday PDF remains available as a manual reference.
+- Added a safe migration that removes only untouched generated suggestions and generated routines. Preserves edited plans, existing routines, logged workouts, completed exercise snapshots, settings, class assignments, history, and bank entries.
+- Preserved flexible day and finisher templates, workout-only or routine-wide editing, optional Exercise Bank designations, substitutions, supersets, date snapshots, and all selected planning and tracking upgrades.
+- Fixed set editing on all exercise cards. Increasing the planned set count extends an already-started workout without discarding existing values. Newly opened sets carry forward the latest saved weights.
+- Preserved automatic transfer of assigned classes into History when workout data exists, including multiple class assignments.
+- Added revisioned routine and Exercise Bank snapshots to sync. This lets v75 deletions and edits persist while preserving backward compatibility with legacy unversioned data and the old bank reset marker.
+- Removed the Body Progress page from the published Exercise Tracker. The separate Health Tracker API endpoint is retained.
+- Updated app asset URLs and service worker cache to v75.

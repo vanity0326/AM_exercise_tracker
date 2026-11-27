@@ -1,15 +1,13 @@
 // ---------- Data ----------
-const APP_VERSION = "v74";
+const APP_VERSION = "v75";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
 // finisher list. Rest is the only exception (no logging needed).
 const LS_DAY_DESIGNATIONS = "iron-log-day-designations";
 const DEFAULT_DAY_DESIGNATIONS = [
-  { id:"upper", label:"Upper A", loggable:true, primaryValue:"upper" },
-  { id:"upper-b", label:"Upper B", loggable:true, primaryValue:"upper-b" },
-  { id:"lower", label:"Lower A", loggable:true, primaryValue:"lower" },
-  { id:"lower-b", label:"Lower B", loggable:true, primaryValue:"lower-b" },
+  { id:"upper", label:"Upper Lift", loggable:true, primaryValue:"upper" },
+  { id:"lower", label:"Lower Lift", loggable:true, primaryValue:"lower" },
   { id:"core", label:"Core", loggable:true, primaryValue:"core" },
   { id:"mobility", label:"Mobility", loggable:true, primaryValue:"mob" },
   { id:"pilates", label:"Pilates", loggable:true, primaryValue:"pilates" },
@@ -26,9 +24,9 @@ function normalizeDayDesignations(input) {
   });
   return [...byId.values()].map(d => {
     let label = String(d.label).trim();
-    // Rename only the untouched Version 69 defaults; preserve user-custom labels.
-    if (d.id === "upper" && label === "Upper Lift") label = "Upper A";
-    if (d.id === "lower" && label === "Lower Lift") label = "Lower A";
+    // Return only the generated Version 70 labels to their pre-block defaults.
+    if (d.id === "upper" && label === "Upper A") label = "Upper Lift";
+    if (d.id === "lower" && label === "Lower A") label = "Lower Lift";
     return { ...d, label, loggable:d.loggable !== false };
   });
 }
@@ -146,7 +144,9 @@ function migrateRoutineTemplates() {
     const candidates = Object.entries(logs).filter(([, day]) => Array.isArray(day?.lists?.[key]) && day.lists[key].length).sort((a,b) => a[0].localeCompare(b[0]));
     if (candidates.length) {
       // Latest known configuration is the best available starting template.
-      library[key] = candidates[candidates.length - 1][1].lists[key].map(e => ({...e}));
+      library[key] = candidates[candidates.length - 1][1].lists[key]
+        .filter(e => !String(e?.id || "").startsWith("v70-"))
+        .map(e => ({...e}));
       libraryChanged = true;
     }
   }
@@ -166,77 +166,8 @@ function migrateRoutineTemplates() {
 
 // Strength routine keys are initialized here. Other day-type and finisher
 // templates are added to this same library as the user creates them.
-const DEFAULT_LIBRARY = { upper: [], "upper-b": [], lower: [], "lower-b": [] };
-
-// Version 70 strength-block templates. A one-time first-load migration installs
-// these redesigned routines while preserving completed dated workout snapshots.
-function v70Exercise(id, name, sets, reps, weights = []) {
-  return { id, name, trackType:"weight", numSets:sets, targets:Array.isArray(reps) ? reps : Array.from({length:sets},()=>reps), weights:Array.from({length:sets},(_,i)=>weights[i] ?? null) };
-}
-const V70_STRENGTH_ROUTINES = {
-  // Lower A: compound quadriceps movement first, then glutes and supporting work.
-  lower: [
-    v70Exercise("v70-leg-press-a","Leg Press Machine",3,[10,10,8],[125,130,135]),
-    v70Exercise("v70-leg-extension-a","Leg Extension Machine",3,[10,10,8]),
-    v70Exercise("v70-hip-thrust-a","Hip Thrust",3,[10,10,8],[20,20,20]),
-    v70Exercise("v70-leg-curl-a","Leg Curl (Prone)",3,[10,10,8],[80,82.5,85]),
-    v70Exercise("v70-hip-abduction-a","Hip Abduction Machine",3,[12,10,10],[190,200,210])
-  ],
-  // Upper A: push/pull compounds first, then shoulders and arms.
-  upper: [
-    v70Exercise("v70-chest-press-left-a","Chest Press Converging (Left)",3,[10,10,8],[45,50,55]),
-    v70Exercise("v70-chest-press-right-a","Chest Press Converging (Right)",3,[10,10,8],[50,55,60]),
-    v70Exercise("v70-high-row-left-a","High Row Machine Iso Lateral (Left)",3,[10,10,8],[40,45,50]),
-    v70Exercise("v70-high-row-right-a","High Row Machine Iso Lateral (Right)",3,[10,10,8],[45,50,55]),
-    v70Exercise("v70-lat-pulldown-a","Lat Pulldown Machine",3,[10,10,8],[70,75,80]),
-    v70Exercise("v70-shoulder-press-a","Shoulder Press Machine",3,[10,10,8]),
-    v70Exercise("v70-lateral-raise-a","Lateral Raise Machine",2,[12,12]),
-    v70Exercise("v70-triceps-a","Tricep Extension Machine",2,[10,10],[65,70]),
-    v70Exercise("v70-biceps-a","Biceps Curl",2,[10,10],[50,55])
-  ],
-  // Lower B: hamstring/glute emphasis; no calf loading or impact work.
-  "lower-b": [
-    v70Exercise("v70-leg-curl-b","Leg Curl (Seated)",3,[10,10,8],[80,82.5,85]),
-    v70Exercise("v70-hip-thrust-b","Hip Thrust",3,[10,10,8],[20,20,20]),
-    v70Exercise("v70-leg-press-b","Leg Press Machine",3,[10,10,8],[125,130,135]),
-    v70Exercise("v70-leg-extension-b","Leg Extension Machine",2,[12,10]),
-    v70Exercise("v70-hip-abduction-b","Hip Abduction Machine",2,[12,12],[190,200])
-  ],
-  // Upper B: alternate back emphasis, balanced pressing, rear delts and arms.
-  "upper-b": [
-    v70Exercise("v70-lat-pulldown-b","Lat Pulldown Machine",3,[10,10,8],[70,75,80]),
-    v70Exercise("v70-seated-row-b","Seated Row Machine",3,[10,10,8]),
-    v70Exercise("v70-chest-press-b","Chest Press Machine",3,[10,10,8]),
-    v70Exercise("v70-reverse-pec-deck-b","Reverse Pec Deck",3,[12,12,10]),
-    v70Exercise("v70-shoulder-press-b","Shoulder Press Machine",2,[10,10]),
-    v70Exercise("v70-biceps-b","Biceps Curl Machine",3,[10,10,8]),
-    v70Exercise("v70-triceps-b","Triceps Extension Machine",3,[10,10,8]),
-    v70Exercise("v70-lateral-raise-b","Lateral Raise Machine",2,[12,12])
-  ]
-};
-function installV70StrengthRoutines() {
-  const marker = "iron-log-v70-strength-migration";
-  if (localStorage.getItem(marker) === "complete") return false;
-  // A second device can recognize an already-migrated/synced library without
-  // relying on device-local flags, and must not overwrite later user edits.
-  const alreadyInstalled = ["upper","upper-b","lower","lower-b"].every(key =>
-    Array.isArray(library[key]) && library[key].some(ex => String(ex.id || "").startsWith("v70-"))
-  );
-  if (alreadyInstalled) { localStorage.setItem(marker, "complete"); return false; }
-  // Version 70 is the first complete A/B program. On its first load, deliberately
-  // replace the old Upper/Lower templates with the redesigned A routines and
-  // install the two B routines. Existing dated logs and completed sets are untouched.
-  for (const [key, routine] of Object.entries(V70_STRENGTH_ROUTINES)) {
-    const copy = routine.map(ex => ({...ex, targets:[...ex.targets], weights:[...ex.weights]}));
-    // Route changes through the app's routine editor path so completed dated
-    // workouts are snapshotted before their shared template changes.
-    setExerciseList("2026-11-23", key, copy, "routine");
-  }
-  localStorage.setItem(marker, "complete");
-  return true;
-}
-
-const PROGRESSION_BUMP = { upper: 5, "upper-b": 5, lower: 10, "lower-b": 10, other: 5 };
+const DEFAULT_LIBRARY = { upper: [], lower: [] };
+const PROGRESSION_BUMP = { upper: 5, lower: 10, other: 5 };
 const DEFAULT_TARGET_REPS = 10;
 const DEFAULT_TARGET_SECONDS = 30;
 const DEFAULT_TARGET_MINUTES = 20;
@@ -312,9 +243,13 @@ function targetLabelFor(ex) {
 
 // ---------- Storage ----------
 const LS_LIB = "iron-log-library";
+const LS_LIBRARY_UPDATED_AT = "iron-log-library-updated-at";
 const LS_LOGS = "iron-log-logs";
 const LS_BANK = "iron-log-bank";
+const LS_BANK_UPDATED_AT = "iron-log-bank-updated-at";
 const LS_LOCAL_UPDATED_AT = "iron-log-local-updated-at";
+let libraryUpdatedAt = Number(localStorage.getItem(LS_LIBRARY_UPDATED_AT) || 0);
+let bankUpdatedAt = Number(localStorage.getItem(LS_BANK_UPDATED_AT) || 0);
 
 // Stamped (synchronously, so it survives even an immediate page refresh)
 // every time this device writes data locally. Used to avoid a race where a
@@ -337,6 +272,8 @@ function loadLibrary() {
   }
 }
 function saveLibrary(lib) {
+  libraryUpdatedAt = Math.max(Date.now(), libraryUpdatedAt + 1);
+  localStorage.setItem(LS_LIBRARY_UPDATED_AT, String(libraryUpdatedAt));
   localStorage.setItem(LS_LIB, JSON.stringify(lib));
   touchLocalUpdatedAt();
   schedulePush();
@@ -367,36 +304,48 @@ function loadBank() {
   }
 }
 function saveBank(bank) {
+  bankUpdatedAt = Math.max(Date.now(), bankUpdatedAt + 1);
+  localStorage.setItem(LS_BANK_UPDATED_AT, String(bankUpdatedAt));
   localStorage.setItem(LS_BANK, JSON.stringify(bank));
   touchLocalUpdatedAt();
   schedulePush();
 }
-// Clear the prior bank assignments once for every browser upgrading to v62.
-const LS_V62_BANK_RESET = "iron-log-v62-bank-day-assignments-cleared";
-function clearBankDayAssignmentsForV62() {
-  if (localStorage.getItem(LS_V62_BANK_RESET) === "done") return false;
-  Object.values(bank || {}).forEach(entry => { if (entry) entry.dayDesignation = ""; });
-  localStorage.setItem(LS_V62_BANK_RESET, "pending");
-  saveBank(bank);
-  return true;
-}
-// Version 65 removes the existing bank contents once, after local and remote
-// snapshots have been merged. The pending marker retries the clear until an
-// empty bank has successfully synced. Starter entries are not reseeded.
-const LS_V65_BANK_RESET = "iron-log-v65-exercise-bank-cleared";
-function clearExerciseBankForV65(remote = {}) {
-  // The server marker makes the reset global: other devices must not repeat it
-  // after someone has begun rebuilding the bank.
-  if (Number(remote?.bankResetVersion) >= 65) {
-    localStorage.setItem(LS_V65_BANK_RESET, "done");
-    return false;
+function chooseBankSnapshot(remoteBank, localBank, remoteRevision, localRevision, preferLocalOnTie) {
+  const remoteVersion = Number(remoteRevision) || 0;
+  const localVersion = Number(localRevision) || 0;
+  const remote = remoteBank || {};
+  const local = localBank || {};
+  if (remoteVersion && localVersion) {
+    if (localVersion > remoteVersion || (localVersion === remoteVersion && preferLocalOnTie)) return { bank:{...local}, revision:localVersion };
+    return { bank:{...remote}, revision:remoteVersion };
   }
-  if (localStorage.getItem(LS_V65_BANK_RESET) === "done") return false;
-  bank = {};
-  localStorage.setItem(LS_BANK, "{}");
-  localStorage.setItem(LS_V65_BANK_RESET, "pending");
-  touchLocalUpdatedAt();
-  return true;
+  if (remoteVersion && !localVersion) return { bank:{...remote}, revision:remoteVersion };
+  if (localVersion && !remoteVersion) return { bank:{...local}, revision:localVersion };
+  return {
+    bank:preferLocalOnTie ? {...remote, ...local} : {...local, ...remote},
+    revision:Math.max(remoteVersion, localVersion),
+  };
+}
+function chooseLibrarySnapshot(remoteLibrary, localLibrary, remoteRevision, localRevision, preferLocalOnTie) {
+  const remoteVersion = Number(remoteRevision) || 0;
+  const localVersion = Number(localRevision) || 0;
+  const remote = remoteLibrary || {};
+  const local = localLibrary || {};
+  if (remoteVersion && localVersion) {
+    if (localVersion > remoteVersion || (localVersion === remoteVersion && preferLocalOnTie)) return {library:{...local}, revision:localVersion};
+    return {library:{...remote}, revision:remoteVersion};
+  }
+  if (remoteVersion && !localVersion) return {library:{...remote}, revision:remoteVersion};
+  if (localVersion && !remoteVersion) return {library:{...local}, revision:localVersion};
+  const merged = preferLocalOnTie ? {...remote,...local} : {...local,...remote};
+  const keys = new Set([...Object.keys(remote), ...Object.keys(local)]);
+  for (const key of keys) {
+    const remoteList = Array.isArray(remote[key]) ? remote[key] : [];
+    const localList = Array.isArray(local[key]) ? local[key] : [];
+    if (remoteList.length && !localList.length) merged[key] = remoteList;
+    else if (localList.length && !remoteList.length) merged[key] = localList;
+  }
+  return {library:merged, revision:0};
 }
 function canonicalDayDesignationId(dayId) {
   if (!dayId) return "";
@@ -486,17 +435,23 @@ async function pullRemote(isInitial) {
         const merged = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
         localClasses.forEach(c => { if (c && c.id) merged.set(c.id, c); });
         classes = [...merged.values()];
-        const remoteBankWasReset = Number(remote.bankResetVersion) >= 65;
-        const localResetMarker = localStorage.getItem(LS_V65_BANK_RESET);
-        bank = remoteBankWasReset && !localResetMarker
-          ? { ...(remote.bank || {}) }
-          : { ...(remote.bank || {}), ...(bank || {}) };
+        const selectedLibrary = chooseLibrarySnapshot(remote.library, library, remote.libraryUpdatedAt, libraryUpdatedAt, true);
+        library = {...structuredClone(DEFAULT_LIBRARY), ...selectedLibrary.library};
+        libraryUpdatedAt = selectedLibrary.revision;
+        localStorage.setItem(LS_LIB, JSON.stringify(library));
+        localStorage.setItem(LS_LIBRARY_UPDATED_AT, String(libraryUpdatedAt));
+        const selectedBank = chooseBankSnapshot(remote.bank, bank, remote.bankUpdatedAt, bankUpdatedAt, true);
+        bank = selectedBank.bank;
+        bankUpdatedAt = selectedBank.revision;
         localStorage.setItem(LS_BANK, JSON.stringify(bank));
+        localStorage.setItem(LS_BANK_UPDATED_AT, String(bankUpdatedAt));
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
-        clearExerciseBankForV65(remote);
-        installV70StrengthRoutines();
-        preloadV70StrengthBlock();
+        if (removeHolidayBlockDefaults()) {
+          localStorage.setItem(LS_LIB, JSON.stringify(library));
+          localStorage.setItem(LS_LOGS, JSON.stringify(logs));
+          localStorage.setItem(LS_BANK, JSON.stringify(bank));
+        }
         setSyncStatus("syncing");
         pushRemote();
         return;
@@ -513,29 +468,22 @@ async function pullRemote(isInitial) {
       let repairRemoteWorkoutData = false;
       let relabeledClassTitles = false;
       suppressPush = true;
-      library = { ...structuredClone(DEFAULT_LIBRARY), ...(remote.library || {}) };
+      const selectedLibrary = chooseLibrarySnapshot(remote.library, localLibraryBeforePull, remote.libraryUpdatedAt, libraryUpdatedAt, false);
+      library = { ...structuredClone(DEFAULT_LIBRARY), ...selectedLibrary.library };
+      libraryUpdatedAt = selectedLibrary.revision;
       // An empty or partial snapshot from one device must not erase routines
       // and dates already stored on another device. Merge by date, preferring
       // the remote copy for dates it actually contains.
-      for (const [listKey, localList] of Object.entries(localLibraryBeforePull)) {
-        const remoteList = library[listKey];
-        if (Array.isArray(localList) && localList.length && (!Array.isArray(remoteList) || !remoteList.length)) {
-          library[listKey] = localList;
-          repairRemoteWorkoutData = true;
-        }
-      }
+      if (Object.keys(library).length > Object.keys(remote.library || {}).length) repairRemoteWorkoutData = true;
       logs = { ...(localLogsBeforePull || {}), ...(remote.logs || {}) };
       if (Object.keys(logs).length > Object.keys(remote.logs || {}).length) repairRemoteWorkoutData = true;
-      const remoteBankWasReset = Number(remote.bankResetVersion) >= 65;
-      const localResetMarker = localStorage.getItem(LS_V65_BANK_RESET);
-      bank = remoteBankWasReset && !localResetMarker
-        ? { ...(remote.bank || {}) }
-        : { ...localBankBeforePull, ...(remote.bank || {}) };
+      const selectedBank = chooseBankSnapshot(remote.bank, localBankBeforePull, remote.bankUpdatedAt, bankUpdatedAt, false);
+      bank = selectedBank.bank;
+      bankUpdatedAt = selectedBank.revision;
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
       if (migrateRoutineTemplates()) repairRemoteWorkoutData = true;
-      if (installV70StrengthRoutines()) repairRemoteWorkoutData = true;
-      if (preloadV70StrengthBlock()) repairRemoteWorkoutData = true;
+      if (removeHolidayBlockDefaults()) repairRemoteWorkoutData = true;
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
         // An older backend or stale/empty remote payload must not wipe classes
         // already stored on this device. Preserve them and repair remote below.
@@ -554,14 +502,15 @@ async function pullRemote(isInitial) {
       // if the remote has none, keep this device's copy instead of wiping it.
       if (remote.marathon) marathon = { ...structuredClone(DEFAULT_MARATHON), ...remote.marathon };
       localStorage.setItem(LS_LIB, JSON.stringify(library));
+      localStorage.setItem(LS_LIBRARY_UPDATED_AT, String(libraryUpdatedAt));
       localStorage.setItem(LS_LOGS, JSON.stringify(logs));
       localStorage.setItem(LS_BANK, JSON.stringify(bank));
+      localStorage.setItem(LS_BANK_UPDATED_AT, String(bankUpdatedAt));
       localStorage.setItem(LS_DAY_DESIGNATIONS, JSON.stringify(dayDesignations));
       localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       localStorage.setItem(LS_MARATHON, JSON.stringify(marathon));
       suppressPush = false;
-      const resetBank = clearExerciseBankForV65(remote);
-      if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles || resetBank) {
+      if (repairRemoteClasses || repairRemoteDayDesignations || repairRemoteWorkoutData || relabeledClassTitles) {
         touchLocalUpdatedAt();
         schedulePush();
       } else {
@@ -571,17 +520,14 @@ async function pullRemote(isInitial) {
     } else if (isInitial || !Object.keys(bank).length) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
-      clearExerciseBankForV65(null);
-      installV70StrengthRoutines();
-      preloadV70StrengthBlock();
+      removeHolidayBlockDefaults();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
       setSyncStatus("synced");
     }
   } catch (e) {
-    installV70StrengthRoutines();
-    preloadV70StrengthBlock();
+    removeHolidayBlockDefaults();
     setSyncStatus(navigator.onLine ? "error" : "offline");
   }
 }
@@ -602,13 +548,10 @@ function pushRemote() {
       const res = await fetch(REMOTE_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library, logs, bank, marathon, classes, dayDesignations,
-          replaceAll: forceRemoteReplace,
-          bankResetVersion: localStorage.getItem(LS_V65_BANK_RESET) ? 65 : 0 }),
+        body: JSON.stringify({ library, librarySnapshotVersion:75, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
+          replaceAll: forceRemoteReplace }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
-      if (localStorage.getItem(LS_V62_BANK_RESET) === "pending") localStorage.setItem(LS_V62_BANK_RESET, "done");
-      if (localStorage.getItem(LS_V65_BANK_RESET) === "pending") localStorage.setItem(LS_V65_BANK_RESET, "done");
       if (forceRemoteReplace) forceRemoteReplace = false;
       setSyncStatus("synced");
       return true;
@@ -928,7 +871,7 @@ function renderTabs() {
 // former planner. At a Glance only reads these values.
 function weekPrimaryOptions() {
   const options = [
-    ["", "— Choose Primary —"], ["upper", dayDesignationLabel("upper")], ["upper-b", dayDesignationLabel("upper-b")], ["lower", dayDesignationLabel("lower")], ["lower-b", dayDesignationLabel("lower-b")],
+    ["", "— Choose Primary —"], ["upper", dayDesignationLabel("upper")], ["lower", dayDesignationLabel("lower")],
     ["fullbody", "Full Body"], ["core", dayDesignationLabel("core")], ["mob", dayDesignationLabel("mobility")],
     ["pilates", dayDesignationLabel("pilates")], ["swim", "Swim"], ["ellip", "Elliptical"],
     ["cardio", dayDesignationLabel("cardio")], ["walk", "Walking"], ["treadmill", "Treadmill"],
@@ -1011,63 +954,91 @@ function planForDate(date) { return logs[date]?.plan || {}; }
 
 // Preload the six-week strength block once. Existing dated plans are preserved;
 // blank dates receive editable suggestions, never locked appointments.
-function migrateV72ThanksgivingSchedule() {
-  const marker = "iron-log-v72-thanksgiving-lower-b-moved";
-  if (localStorage.getItem(marker) === "complete") return false;
-  const fromDate = "2026-11-29", toDate = "2026-11-28";
-  const source = logs[fromDate], destination = logs[toDate];
-  const sourceHasDateEdits = Object.keys(source?.lists || {}).length > 0 ||
-    Object.keys(source?.routineOverrides || {}).length > 0 ||
-    Object.keys(source?.classSessions || {}).length > 0 || !!source?.plan?.levelup;
-  const canMove = source?.plan?.primary === "lower-b" && source.plan.v70Suggested === true &&
-    !sourceHasDateEdits && !dayLogHasRealData(source, fromDate) && !destination?.plan &&
-    !dayLogHasRealData(destination, toDate) && !destination?.dayId &&
-    Object.keys(destination?.lists || {}).length === 0;
-  if (canMove) {
-    const movedPlan = { ...source.plan, setDayType:true, v70Suggested:true, v72Suggested:true };
-    logs[toDate] = { ...(destination || { entries:{} }), dayId:"lower-b", plan:movedPlan };
-    source.plan = { ...source.plan, primary:"", setDayType:false };
-    delete source.dayId;
-    logs[fromDate] = source;
-    saveLogs(logs);
-  }
-  localStorage.setItem(marker, "complete");
-  return canMove;
-}
-function preloadV70StrengthBlock() {
-  const marker = "iron-log-v70-block-preloaded";
-  const thanksgivingShifted = migrateV72ThanksgivingSchedule();
-  if (localStorage.getItem(marker) === "complete") return thanksgivingShifted;
-  if (Object.values(logs).some(day => day?.plan?.v70Suggested)) {
-    localStorage.setItem(marker, "complete");
-    return thanksgivingShifted;
-  }
-  const assignments = {
-    // Thanksgiving week: Thursday is left free for the possible gym closure.
-    "2026-11-23":"lower", "2026-11-24":"upper", "2026-11-25":"swim", "2026-11-27":"upper-b", "2026-11-28":"lower-b",
-    // Regular weeks: Wednesday lap swim; PT remains on its existing schedule.
-    "2026-11-30":"lower", "2026-12-01":"upper", "2026-12-02":"swim", "2026-12-03":"lower-b", "2026-12-04":"upper-b",
-    "2026-12-07":"lower", "2026-12-08":"upper", "2026-12-09":"swim", "2026-12-10":"lower-b", "2026-12-11":"upper-b",
-    "2026-12-14":"lower", "2026-12-15":"upper", "2026-12-16":"swim", "2026-12-17":"lower-b", "2026-12-18":"upper-b",
-    // Christmas week: Friday is left free; Saturday is strength, not swimming.
-    "2026-12-21":"lower", "2026-12-22":"upper", "2026-12-23":"swim", "2026-12-24":"lower-b", "2026-12-26":"upper-b",
-    // New Year's week: Friday is left free; Saturday carries the fourth session.
-    "2026-12-28":"lower", "2026-12-29":"upper", "2026-12-30":"swim", "2026-12-31":"lower-b", "2027-01-02":"upper-b", "2027-01-03":"rest"
-  };
-  let changed = false;
-  for (const [date, primary] of Object.entries(assignments)) {
-    if (logs[date]?.plan?.primary) continue; // never overwrite an existing plan
-    const day = logs[date] || { entries:{} };
-    day.plan = { ...(day.plan || {}), primary, isCommute:false, setDayType:true, v70Suggested:true };
-    day.dayId = trackerDayForPlanPrimary(primary) || primary;
+// Remove only untouched suggestions and auto-installed starter routines from
+// the retired Version 70 holiday block. Keep edited dates and workout history.
+const V70_HOLIDAY_ASSIGNMENTS = {
+  "2026-11-23":"lower", "2026-11-24":"upper", "2026-11-25":"swim", "2026-11-27":"upper-b", "2026-11-28":"lower-b",
+  "2026-11-30":"lower", "2026-12-01":"upper", "2026-12-02":"swim", "2026-12-03":"lower-b", "2026-12-04":"upper-b",
+  "2026-12-07":"lower", "2026-12-08":"upper", "2026-12-09":"swim", "2026-12-10":"lower-b", "2026-12-11":"upper-b",
+  "2026-12-14":"lower", "2026-12-15":"upper", "2026-12-16":"swim", "2026-12-17":"lower-b", "2026-12-18":"upper-b",
+  "2026-12-21":"lower", "2026-12-22":"upper", "2026-12-23":"swim", "2026-12-24":"lower-b", "2026-12-26":"upper-b",
+  "2026-12-28":"lower", "2026-12-29":"upper", "2026-12-30":"swim", "2026-12-31":"lower-b", "2027-01-02":"upper-b", "2027-01-03":"rest"
+};
+function removeHolidayBlockDefaults() {
+  const marker = "iron-log-v75-holiday-block-removed";
+  let changed = false, logsChanged = false, libraryChanged = false, bankChanged = false, designationsChanged = false;
+  const planKeys = new Set(["primary", "isCommute", "setDayType", "v70Suggested", "v72Suggested"]);
+  Object.entries(logs || {}).forEach(([date, day]) => {
+    const plan = day?.plan;
+    if (!plan || (!plan.v70Suggested && !plan.v72Suggested)) return;
+    const expected = V70_HOLIDAY_ASSIGNMENTS[date];
+    const noWorkoutData = !dayLogHasRealData(day, date) && Object.keys(day.entries || {}).length === 0 &&
+      Object.keys(day.lists || {}).length === 0 && Object.keys(day.routineOverrides || {}).length === 0 &&
+      Object.keys(day.classSessions || {}).length === 0 && !day.note && !day.finisherNote;
+    const untouched = !!expected && plan.primary === expected && !plan.levelup && !plan.levelupName &&
+      !plan.primaryName && plan.isCommute !== true && noWorkoutData && Object.keys(plan).every(key => planKeys.has(key));
+    const cleanPlan = {...plan};
+    delete cleanPlan.v70Suggested;
+    delete cleanPlan.v72Suggested;
+    if (untouched) {
+      delete day.plan;
+      if (day.dayId === (trackerDayForPlanPrimary(expected) || expected) && plan.setDayType) delete day.dayId;
+    } else {
+      day.plan = cleanPlan;
+    }
     logs[date] = day;
     changed = true;
+    logsChanged = true;
+  });
+  Object.entries(logs || {}).forEach(([date, day]) => {
+    if (!Object.keys(day?.entries || {}).some(id => id.startsWith("v70-")) || !dayLogHasRealData(day, date)) return;
+    const before = Object.keys(day.completedExercises || {}).length;
+    preserveCompletedExerciseDetails(date);
+    if (Object.keys(day.completedExercises || {}).length !== before) { changed = true; logsChanged = true; }
+  });
+  for (const key of ["upper", "lower", "upper-b", "lower-b"]) {
+    const list = library[key];
+    if (!Array.isArray(list) || !list.some(ex => String(ex.id || "").startsWith("v70-"))) continue;
+    list.filter(ex => String(ex.id || "").startsWith("v70-")).forEach(ex => {
+      const id = bankKey(ex.name || "");
+      if (id && !bank[id]) {
+        bank[id] = {name:ex.name, type:ex.type || "other", trackType:ex.trackType || "weight",
+          weights:Array.isArray(ex.weights) ? [...ex.weights] : [], targets:Array.isArray(ex.targets) ? [...ex.targets] : null,
+          customUnit:ex.customUnit || null, archived:false, dayDesignation:""};
+        bankChanged = true;
+      }
+    });
+    library[key] = list.filter(ex => !String(ex.id || "").startsWith("v70-"));
+    libraryChanged = true;
+    changed = true;
   }
-  if (changed) saveLogs(logs);
+  const alternates = new Set(["upper-b", "lower-b"]), used = new Set();
+  Object.entries(logs || {}).forEach(([date, day]) => {
+    if (alternates.has(day?.dayId) && dayLogHasRealData(day, date)) used.add(day.dayId);
+    if (alternates.has(day?.plan?.primary) && !day.plan.v70Suggested && !day.plan.v72Suggested) used.add(day.plan.primary);
+  });
+  Object.values(library || {}).flat().forEach(ex => { if (alternates.has(ex?.dayDesignation)) used.add(ex.dayDesignation); });
+  Object.values(bank || {}).forEach(ex => { if (alternates.has(ex?.dayDesignation)) used.add(ex.dayDesignation); });
+  for (const id of alternates) {
+    const generatedLabel = dayDesignations.find(d => d.id === id)?.label === (id === "upper-b" ? "Upper B" : "Lower B");
+    const hasRoutine = Array.isArray(library[id]) && library[id].length > 0;
+    if (generatedLabel && !used.has(id) && !hasRoutine) {
+      dayDesignations = dayDesignations.filter(d => d.id !== id);
+      designationsChanged = true;
+      changed = true;
+    }
+  }
+  if (designationsChanged) {
+    dayDesignations = normalizeDayDesignations(dayDesignations);
+    refreshDayDefinitions();
+    localStorage.setItem(LS_DAY_DESIGNATIONS, JSON.stringify(dayDesignations));
+  }
+  if (logsChanged) saveLogs(logs);
+  if (libraryChanged) saveLibrary(library);
+  if (bankChanged) saveBank(bank);
   localStorage.setItem(marker, "complete");
-  return changed || thanksgivingShifted;
-}
-function bankExerciseForPlan(key) {
+  return changed;
+}function bankExerciseForPlan(key) {
   const entry = bank[key];
   if (!entry) return null;
   const existing = Object.values(library).flat().concat(...Object.values(logs).flatMap(day => Object.values(day.lists || {}).flat()))
@@ -1201,9 +1172,9 @@ function saveInlinePlan(date, slot, value) {
   if (slot === "primary" || slot === "levelup") syncPlannedLevelUpActivity(date);
   if (!dayLogHasRealData(dayLog, date)) {
     if (mapped) { dayLog.dayId = mapped; dayLog.plan.setDayType = true; }
-    else if (slot === "primary" && !value && (dayLog.plan.setDayType || dayLog.plan.v70Suggested || dayLog.plan.v72Suggested)) {
-      // A cleared scheduled activity must not leave the linked day type behind;
-      // selectedDayInfo() would otherwise continue showing it after refresh.
+    else if (slot === "primary" && !value && dayLog.plan.setDayType) {
+      // Clearing a planned activity also clears its linked day type when no
+      // completed workout has been recorded for the date.
       delete dayLog.dayId;
       dayLog.plan.setDayType = false;
     }
@@ -1313,7 +1284,7 @@ function overviewDayLabel(date) {
   const day = logs[date] || {};
   const plannedId = day.plan?.primary === "run" ? marathonDesignationId() : {upper:"upper", "upper-b":"upper-b", lower:"lower", "lower-b":"lower-b", core:"core",mob:"mobility",pilates:"pilates",rest:"rest",cardio:"cardio","lu-core":"core","lu-mob":"mobility","lu-rest":"rest"}[day.plan?.primary];
   const id = plannedId || (!day.plan?.primary ? day.dayId : null) || (DAYS.find(d => d.id === day.plan?.primary || d.primaryValue === day.plan?.primary)?.id) || null;
-  const names = {upper:"Upper A Day","upper-b":"Upper B Day",lower:"Lower A Day","lower-b":"Lower B Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
+  const names = {upper:"Upper Lift Day","upper-b":"Upper B Day",lower:"Lower Lift Day","lower-b":"Lower B Day",core:"Core Day",mobility:"Mobility Day",pilates:"Pilates Reformer",rest:"Rest Day",cardio:"Cardio Day"};
   const primary = (DAYS.find(d => d.id === id) ? atAGlanceDayLabel(DAYS.find(d => d.id === id).label) : null) || (day.plan?.primary ? planOptionLabel(day.plan.primary, day.plan) : null);
   const extra = day.plan?.levelup ? planOptionLabel(day.plan.levelup, day.plan) : "";
   return [primary,extra].filter(Boolean).join(" · ") || null;
@@ -1632,13 +1603,6 @@ function setDayType(dayId) {
   render();
 }
 
-function renderStrengthCardioGuide(dayId) {
-  if (!["upper","upper-b","lower","lower-b"].includes(dayId)) return null;
-  const lower = dayId === "lower" || dayId === "lower-b";
-  const guide = el(`<section class="routine-save-notice" style="margin:12px 0"><strong>Optional cardio suggestion</strong><div style="margin-top:5px">${lower ? "If adding cardio, do strength first, then choose easy recumbent cycling; elliptical is an alternative only if your Achilles feels comfortable. Skip cardio when your legs or tendons are fatigued." : "If combining cardio with upper-body strength, lift first, then choose a comfortable elliptical or recumbent-bike session. Lap swimming can follow strength if desired, or be scheduled separately; never schedule swimming on Saturday."}</div><div style="margin-top:5px">Rotate the recumbent bike and elliptical for variety. Cardio is optional. PT guidance, Achilles symptoms and recovery take priority. Use the existing activity logging controls to record what you actually do.</div></section>`);
-  return guide;
-}
-
 function renderToday() {
   syncPlannedLevelUpActivity(state.selectedDate);
   const wrap = document.createElement("div");
@@ -1666,7 +1630,6 @@ function renderToday() {
 
   const runStrip = renderRunStrip(state.selectedDate);
   if (runStrip) wrap.appendChild(runStrip);
-  if (current) { const cardioGuide = renderStrengthCardioGuide(current.id); if (cardioGuide) wrap.appendChild(cardioGuide); }
 
   if (!current) {
     const prompt = el(`<div class="empty-state">Choose this date’s Primary activity in Plan, then return here to log it.</div>`);
@@ -1735,7 +1698,7 @@ function renderToday() {
 
 // What the weekly plan has down for this date (if anything).
 const PLAN_LABELS = {
-  swim: "Swim", ellip: "Elliptical", upper: "Upper A", "upper-b": "Upper B", lower: "Lower A", "lower-b": "Lower B", fullbody: "Full Body",
+  swim: "Swim", ellip: "Elliptical", upper: "Upper Lift", "upper-b": "Upper B", lower: "Lower Lift", "lower-b": "Lower B", fullbody: "Full Body",
   core: "Core", mob: "Mobility", pilates: "Pilates Reformer", "cardio-class": "Cardio", walk: "Walking",
   treadmill: "Treadmill", run: "Marathon run", rest: "Rest", cardio: "Cardio",
   "lu-swim": "Swim", "lu-ellip": "Elliptical", "lu-dance": "Dance", "lu-yoga": "Yoga", "lu-meditation": "Meditation",
@@ -1966,9 +1929,37 @@ function openSubstituteModal(dayId, exId) {
   document.body.appendChild(overlay); trapFocus(overlay);
 }
 
-function defaultSets(ex) {
+function latestLoggedWeights(ex, beforeDate) {
+  const wantedName = bankKey(ex?.name || "");
+  const exerciseMap = allExercises();
+  const dates = Object.keys(logs || {}).filter(date => date < beforeDate).sort().reverse();
+  for (const date of dates) {
+    const day = logs[date];
+    const candidates = Object.entries(day?.entries || {}).filter(([id, entry]) => {
+      if (!Array.isArray(entry?.sets) || !entry.sets.some(set => set.weight != null && set.weight !== "" && Number.isFinite(Number(set.weight)))) return false;
+      if (id === ex.id) return true;
+      const definition = day.completedExercises?.[id] || Object.values(day.lists || {}).flat().find(item => item.id === id) || exerciseMap[id];
+      return !!wantedName && bankKey(definition?.name || "") === wantedName;
+    });
+    if (candidates.length) return candidates[candidates.length - 1][1].sets.map(set => set.weight);
+  }
+  return [];
+}
+function numericWeight(value) {
+  return value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+}
+function defaultSets(ex, date = state.selectedDate) {
   const n = exNumSets(ex);
-  if (ex.trackType === "weight") return ex.weights.slice(0, n).map((w) => ({ weight: w, reps: null }));
+  if (ex.trackType === "weight") {
+    const recent = Array.isArray(bank[bankKey(ex.name || "")]?.weights) ? bank[bankKey(ex.name || "")].weights : [];
+    const historical = latestLoggedWeights(ex, date);
+    const planned = Array.isArray(ex.weights) ? ex.weights : [];
+    const fallback = [...recent, ...historical, ...planned].map(numericWeight).filter(value => value != null).at(-1) ?? 20;
+    return Array.from({length:n},(_,i) => ({
+      weight:numericWeight(recent[i]) ?? numericWeight(historical[i]) ?? numericWeight(planned[i]) ?? fallback,
+      reps:null,
+    }));
+  }
   return Array.from({ length: n }, () => ({ weight: null, reps: null }));
 }
 
@@ -2440,7 +2431,7 @@ function openBackupRestoreModal() {
   </div>`);
   let parsed = null;
   modal.querySelector('#backup-download').onclick = () => {
-    const payload = {format:'total-transformation-tracker-backup', version:APP_VERSION, exportedAt:new Date().toISOString(), library, logs, bank, classes, dayDesignations, marathon};
+    const payload = {format:'total-transformation-tracker-backup', version:APP_VERSION, exportedAt:new Date().toISOString(), library, libraryUpdatedAt, logs, bank, bankUpdatedAt, classes, dayDesignations, marathon};
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`total-transformation-tracker-backup-${todayISO()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
@@ -2453,10 +2444,11 @@ function openBackupRestoreModal() {
   modal.querySelector('#backup-restore').onclick = () => {
     if (!parsed) return;
     if (!confirm('Replace the current tracker data with this backup? Current data will be overwritten. Download a backup first if you may need it.')) return;
-    library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; logs=parsed.logs || {}; bank=parsed.bank || {}; classes=Array.isArray(parsed.classes)?parsed.classes:[];
+    library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; libraryUpdatedAt=Math.max(Date.now(),Number(parsed.libraryUpdatedAt)||0); logs=parsed.logs || {}; bank=parsed.bank || {}; bankUpdatedAt=Math.max(Date.now(),Number(parsed.bankUpdatedAt)||0); classes=Array.isArray(parsed.classes)?parsed.classes:[];
     if (Array.isArray(parsed.dayDesignations)) { dayDesignations=normalizeDayDesignations(parsed.dayDesignations); refreshDayDefinitions(); }
     if (parsed.marathon) marathon={...structuredClone(DEFAULT_MARATHON),...parsed.marathon};
-    localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank));
+    removeHolidayBlockDefaults();
+    localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LIBRARY_UPDATED_AT,String(libraryUpdatedAt)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank)); localStorage.setItem(LS_BANK_UPDATED_AT,String(bankUpdatedAt));
     localStorage.setItem(LS_CLASSES,JSON.stringify(classes)); localStorage.setItem(LS_DAY_DESIGNATIONS,JSON.stringify(dayDesignations)); localStorage.setItem(LS_MARATHON,JSON.stringify(marathon));
     state.selectedDate = todayISO(); state.selectedDayId = null; state.editScope = "routine"; state.tab = "overview";
     forceRemoteReplace = true; touchLocalUpdatedAt(); schedulePush(); overlay.remove(); render();
@@ -3554,7 +3546,8 @@ function openEditExerciseModal(dayId, exId) {
   customUnitInput.value = ex.customUnit || "";
   const n0 = exNumSets(ex);
   numSetsInput.value = n0;
-  const w0 = ex.weights && ex.weights.length ? ex.weights : Array(n0).fill(20);
+  const starting = defaultSets(ex, date);
+  const w0 = Array.from({length:n0},(_,i)=>starting[i]?.weight ?? 20);
   setNumberRow(weightsRow, n0, w0, labelFnFor(trackSelect.value));
   setNumberRow(targetsRow, n0, Array.from({ length: n0 }, (_, i) => targetForSet(ex, i)), labelFnFor(trackSelect.value));
 
@@ -3608,30 +3601,23 @@ function openEditExerciseModal(dayId, exId) {
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
     const updatedEx = { ...ex, name, trackType, type, numSets, weights, targets, customUnit };
 
+    const scope = state.editScope || "routine";
     const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
-    setExerciseList(date, dayId, newList);
-    // A started workout renders from its saved set array, which takes
-    // precedence over the routine definition. Keep that dated snapshot in
-    // step when the user increases the set count in Edit, too.
+    setExerciseList(date, dayId, newList, scope);
+    // Routine edits affect future sessions; only a current-workout edit resizes
+    // this date's saved set array. Completed values are never discarded.
     const dayLog = logs[date];
     const loggedSets = dayLog?.entries?.[exId]?.sets;
-    if (Array.isArray(loggedSets) && numSets > loggedSets.length) {
-      const last = loggedSets[loggedSets.length - 1] || {weight:null, reps:null};
-      dayLog.entries[exId].sets = [...loggedSets, ...Array.from({length:numSets-loggedSets.length}, () => ({
-        weight:trackType === "weight" ? (last.weight ?? weights[loggedSets.length] ?? 20) : null,
-        reps:null,
-      }))];
-    }
-    if (dayLog && (dayLog.routineOverrides?.[dayId] || Array.isArray(loggedSets))) {
-      const activeList = getExerciseList(date, dayId);
-      dayLog.lists ||= {};
-      dayLog.routineOverrides ||= {};
-      dayLog.lists[dayId] = activeList.map(item => item.id === exId ? updatedEx : item);
-      dayLog.routineOverrides[dayId] = true;
-      if (Array.isArray(loggedSets)) {
-        preserveCompletedExerciseDetails(date);
-        saveLogs(logs);
+    if (scope === "today" && Array.isArray(loggedSets)) {
+      const resized = [...loggedSets];
+      while (resized.length < numSets) {
+        const index = resized.length;
+        resized.push({weight:trackType === "weight" ? (numericWeight(weights[index]) ?? numericWeight(weights.at(-1)) ?? 20) : null, reps:null});
       }
+      while (resized.length > numSets && resized.at(-1)?.reps == null) resized.pop();
+      dayLog.entries[exId] = {sets:resized};
+      preserveCompletedExerciseDetails(date);
+      saveLogs(logs);
     }
     upsertBank(updatedEx);
 

@@ -1,0 +1,9 @@
+Version 75 deployment notes
+
+1. Deploy this project root to Netlify.
+2. Keep `site/` as the publish directory and `netlify/functions/` as the functions directory, as configured in `netlify.toml`.
+3. Do not replace the shared Netlify Blobs store. Version 75 migrates existing records in place.
+4. Existing clients receive the v75 assets through the versioned URLs and service-worker cache.
+5. The published Exercise Tracker no longer includes `body.html`. Keep `netlify/functions/body.mjs` for the separate Health Tracker endpoint.
+
+The first v75 load removes only untouched holiday suggestions and generated holiday starter routines. Edited days and records with workout data are retained. The routine and bank snapshots are timestamped for cross-device sync; older unversioned data is merged conservatively.

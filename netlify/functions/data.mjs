@@ -35,33 +35,56 @@ export default async (req) => {
     const replaceAll = body.replaceAll === true;
     const previousLibrary = previous?.library || {};
     const incomingLibrary = body.library || {};
-    const library = replaceAll ? { ...incomingLibrary } : { ...previousLibrary, ...incomingLibrary };
-    // Do not let an empty/stale browser snapshot erase shared routines.
-    if (!replaceAll) {
+    const previousLibraryVersion = Number(previous?.librarySnapshotVersion || 0);
+    const incomingLibraryVersion = Number(body.librarySnapshotVersion || 0);
+    const previousLibraryUpdatedAt = Number(previous?.libraryUpdatedAt || 0);
+    const incomingLibraryUpdatedAt = Number(body.libraryUpdatedAt || 0);
+    let library;
+    if (replaceAll || (incomingLibraryVersion >= 75 && incomingLibraryUpdatedAt >= previousLibraryUpdatedAt)) {
+      library = { ...incomingLibrary };
+    } else if (previousLibraryVersion >= 75 || previousLibraryUpdatedAt > incomingLibraryUpdatedAt) {
+      // Ignore stale pre-v75 devices after the v75 snapshot is authoritative.
+      library = { ...previousLibrary };
+    } else if (incomingLibraryVersion >= 75) {
+      library = { ...incomingLibrary };
+    } else {
+      library = { ...previousLibrary, ...incomingLibrary };
       for (const [key, list] of Object.entries(previousLibrary)) {
         if (Array.isArray(list) && list.length && Array.isArray(incomingLibrary[key]) && incomingLibrary[key].length === 0) {
           library[key] = list;
         }
       }
     }
+    const librarySnapshotVersion = Math.max(previousLibraryVersion, incomingLibraryVersion);
+    const libraryUpdatedAt = Math.max(previousLibraryUpdatedAt, incomingLibraryUpdatedAt);
     const previousBankResetVersion = Number(previous?.bankResetVersion || 0);
     const incomingBankResetVersion = Number(body.bankResetVersion || 0);
     const bankResetVersion = Math.max(previousBankResetVersion, incomingBankResetVersion);
-    // Version 65 submits the rebuilt bank as the authoritative replacement.
-    // Thereafter, older clients cannot repopulate the deleted bank snapshot.
-    const bank = replaceAll
-      ? { ...(body.bank || {}) }
-      : incomingBankResetVersion >= 65
-        ? { ...(body.bank || {}) }
-        : (previousBankResetVersion >= 65
-          ? (previous?.bank || {})
-          : { ...(previous?.bank || {}), ...(body.bank || {}) });
+    const previousBankUpdatedAt = Number(previous?.bankUpdatedAt || 0);
+    const incomingBankUpdatedAt = Number(body.bankUpdatedAt || 0);
+    let bank;
+    if (replaceAll || (incomingBankUpdatedAt > 0 && incomingBankUpdatedAt >= previousBankUpdatedAt)) {
+      bank = { ...(body.bank || {}) };
+    } else if (previousBankUpdatedAt > 0) {
+      // An older app or stale device cannot restore a deleted bank entry.
+      bank = { ...(previous?.bank || {}) };
+    } else if (incomingBankResetVersion >= 65) {
+      bank = { ...(body.bank || {}) };
+    } else if (previousBankResetVersion >= 65) {
+      bank = { ...(previous?.bank || {}) };
+    } else {
+      bank = { ...(previous?.bank || {}), ...(body.bank || {}) };
+    }
+    const bankUpdatedAt = Math.max(previousBankUpdatedAt, incomingBankUpdatedAt);
     const toSave = {
       library,
+      librarySnapshotVersion,
+      libraryUpdatedAt,
       // Merge by date during ordinary sync so a partial cache cannot wipe
       // history. An explicit backup restore replaces the full dated dataset.
       logs: replaceAll ? (body.logs || {}) : { ...(previous?.logs || {}), ...(body.logs || {}) },
       bank,
+      bankUpdatedAt,
       bankResetVersion,
       classes: replaceAll
         ? (Array.isArray(body.classes) ? body.classes : [])

@@ -54,7 +54,7 @@ function sessionItems() {
 }
 function classStats(id) { const all=sessionItems().filter(s=>s.classId===id&&classSessionHasCompletion(s.exerciseId,s,logs[s.date],s.date)).sort((a,b)=>a.date.localeCompare(b.date)); return {count:all.length,last:all.at(-1)?.date || '',sessions:all}; }
 function renderClasses() {
-  const wrap=el(`<section class="cl-wrap"><h2>Class Library</h2><p class="field-hint">Save classes without logging a workout. Use History to attach classes to previous sessions.</p><div class="cl-toolbar"><input id="cl-search" placeholder="Search classes, instructors, music or platforms" aria-label="Search classes"><button class="btn-primary" id="cl-add">+ Add Class</button><button class="btn-secondary" id="cl-export">Export JSON</button><button class="btn-secondary" id="cl-import">Import JSON</button><input type="file" id="cl-file" accept="application/json,.json" hidden></div><div class="cl-filter"><select id="cl-status"><option value="">All statuses</option><option>Want to Try</option><option>Active</option><option>Favorite</option><option>Archived</option></select><select id="cl-platform"><option value="">All platforms</option></select></div><div id="cl-results"></div></section>`);
+  const wrap=el(`<section class="cl-wrap"><h2>Class Library</h2><p class="field-hint">Save classes without logging a workout. Use History to attach classes to previous sessions.</p><div class="cl-toolbar"><input id="cl-search" placeholder="Search classes, instructors, music or platforms" aria-label="Search classes"><button class="btn-primary" id="cl-add">+ Add Class</button><button class="btn-secondary" id="cl-export">Export JSON</button><button class="btn-secondary" id="cl-import">Import JSON</button><input type="file" id="cl-file" accept="application/json,.json" hidden></div><div class="cl-filter"><select id="cl-type"><option value="">All types</option></select><select id="cl-platform"><option value="">All platforms</option></select></div><div id="cl-results"></div></section>`);
   wrap.querySelector('#cl-add').onclick=()=>openClassEditor();
   wrap.querySelector('#cl-export').onclick=()=>downloadFile(JSON.stringify({format:'iron-log-classes-v42',classes,sessionLinks:sessionItems()},null,2),'class-library-backup-'+todayISO()+'.json','application/json');
   wrap.querySelector('#cl-import').onclick=()=>wrap.querySelector('#cl-file').click();
@@ -84,10 +84,12 @@ function renderClasses() {
     saveLogs(logs); saveClasses(); render();
     alert(`Restore complete: ${data.classes.length} class records available; ${restoredLinks} class-history links restored or checked. Existing workout measurements were preserved.`);
   }catch(err){alert('Import failed: '+err.message)}finally{e.target.value=''}};
+  const typeFilter=wrap.querySelector('#cl-type');
+  [...new Set(classes.map(c=>String(c.title||c.exercise||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b)).forEach(type=>typeFilter.insertAdjacentHTML('beforeend',`<option value="${safeText(type)}">${safeText(type)}</option>`));
   const platform=wrap.querySelector('#cl-platform'); [...new Set(classes.map(c=>c.platform).filter(Boolean))].sort().forEach(p=>platform.insertAdjacentHTML('beforeend',`<option value="${safeText(p)}">${safeText(p)}</option>`));
   const draw=()=>{
-    const q=wrap.querySelector('#cl-search').value.toLowerCase(), status=wrap.querySelector('#cl-status').value, plat=platform.value;
-    const selected=classes.filter(c=>(!status||c.status===status)&&(!plat||c.platform===plat)&&[c.title,c.episode,c.published,c.duration,c.platform,c.instructor,c.music,c.collection,c.exercise].join(' ').toLowerCase().includes(q));
+    const q=wrap.querySelector('#cl-search').value.toLowerCase(), type=typeFilter.value, plat=platform.value;
+    const selected=classes.filter(c=>(!type||String(c.title||c.exercise||'').trim()===type)&&(!plat||c.platform===plat)&&[c.title,c.episode,c.published,c.duration,c.platform,c.instructor,c.music,c.collection,c.exercise].join(' ').toLowerCase().includes(q));
     const results=wrap.querySelector('#cl-results');results.innerHTML='';
     if(!selected.length){results.innerHTML='<div class="empty-state">No classes match. Add a class to begin.</div>';return;}
     selected.sort((a,b)=>(b.favorite?1:0)-(a.favorite?1:0)||classLabel(a).localeCompare(classLabel(b))).forEach(c=>{
@@ -100,7 +102,7 @@ function renderClasses() {
       results.appendChild(card);
     });
   };
-  ['#cl-search','#cl-status','#cl-platform'].forEach(id=>wrap.querySelector(id).addEventListener('input',draw));draw();return wrap;
+  ['#cl-search','#cl-type','#cl-platform'].forEach(id=>wrap.querySelector(id).addEventListener('input',draw));draw();return wrap;
 }
 const CLASS_FIELDS=[['title','Class title','text'],['platform','Platform / source','text'],['instructor','Instructor','text'],['exercise','Workout type / exercise','text'],['duration','Class duration (minutes)','number'],['episode','Episode / class number','text'],['published','Publish date','date'],['music','Music theme','text'],['url','Class URL','url'],['equipment','Equipment','text'],['focus','Body focus','text'],['difficulty','Difficulty / skill level','text'],['collection','Collection','text']];
 function openClassEditor(id,onSaved,duplicateOf=null){

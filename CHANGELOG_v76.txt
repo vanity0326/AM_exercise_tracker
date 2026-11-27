@@ -1,0 +1,9 @@
+Version 76
+
+- Removed the preloaded holiday block and its holiday-only starter routines. The holiday plan remains in a separate PDF.
+- Added a migration that clears unstarted plan entries dated November 23, 2026 or later. Completed workout data, class history, and other records on completed days are preserved.
+- Added a visible edit scope. Edits on days with workout data default to “This workout only,” and can instead be applied to reusable routines for future workouts. Changing set count updates the selected scope and the current saved set array when appropriate.
+- Replaced the Classes tab status filter with a type/category filter using class titles such as Stride or Cooldown. Status labels remain visible.
+- Retained Version 75's set editing, weight carryover, flexible routines, timestamped sync, automatic class-to-History transfer, multiple class assignments, full backup/restore, and the other selected upgrades.
+- Removed the Body Progress page from the published Exercise Tracker while retaining the separate Health Tracker API endpoint.
+- Updated app asset URLs and service-worker cache to v76.

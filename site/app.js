@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v75";
+const APP_VERSION = "v76";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -447,7 +447,7 @@ async function pullRemote(isInitial) {
         localStorage.setItem(LS_BANK_UPDATED_AT, String(bankUpdatedAt));
         migrateWalkRunClassTitles();
         localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
-        if (removeHolidayBlockDefaults()) {
+        if (runV76Migrations()) {
           localStorage.setItem(LS_LIB, JSON.stringify(library));
           localStorage.setItem(LS_LOGS, JSON.stringify(logs));
           localStorage.setItem(LS_BANK, JSON.stringify(bank));
@@ -483,7 +483,7 @@ async function pullRemote(isInitial) {
       dayDesignations = mergeDayDesignationLists(remote.dayDesignations, dayDesignations, false);
       refreshDayDefinitions();
       if (migrateRoutineTemplates()) repairRemoteWorkoutData = true;
-      if (removeHolidayBlockDefaults()) repairRemoteWorkoutData = true;
+      if (runV76Migrations()) repairRemoteWorkoutData = true;
       if (!remoteHasClasses || (remoteClasses.length === 0 && localClassesBeforePull.length > 0)) {
         // An older backend or stale/empty remote payload must not wipe classes
         // already stored on this device. Preserve them and repair remote below.
@@ -520,14 +520,14 @@ async function pullRemote(isInitial) {
     } else if (isInitial || !Object.keys(bank).length) {
       // Seed only after confirming the remote store is empty. Seeding before this
       // point stamps local storage as newer and can overwrite data on a new device.
-      removeHolidayBlockDefaults();
+      runV76Migrations();
       if (migrateWalkRunClassTitles()) localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
       pushRemote();
     } else {
       setSyncStatus("synced");
     }
   } catch (e) {
-    removeHolidayBlockDefaults();
+    runV76Migrations();
     setSyncStatus(navigator.onLine ? "error" : "offline");
   }
 }
@@ -548,7 +548,7 @@ function pushRemote() {
       const res = await fetch(REMOTE_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library, librarySnapshotVersion:75, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
+        body: JSON.stringify({ library, librarySnapshotVersion:76, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
           replaceAll: forceRemoteReplace }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
@@ -1038,7 +1038,32 @@ function removeHolidayBlockDefaults() {
   if (bankChanged) saveBank(bank);
   localStorage.setItem(marker, "complete");
   return changed;
-}function bankExerciseForPlan(key) {
+}
+function clearUnstartedPlansFromV76() {
+  const marker = "iron-log-v76-plans-cleared-from-2026-11-23";
+  if (localStorage.getItem(marker) === "complete") return false;
+  let changed = false;
+  for (const [date, day] of Object.entries(logs || {})) {
+    if (date < "2026-11-23" || !day || dayLogHasRealData(day, date)) continue;
+    const hasPlanData = !!day.plan || !!day.dayId || !!day.lists || !!day.routineOverrides || !!day.planListKeys;
+    if (!hasPlanData) continue;
+    delete day.plan;
+    delete day.dayId;
+    delete day.lists;
+    delete day.routineOverrides;
+    delete day.planListKeys;
+    changed = true;
+  }
+  if (changed) saveLogs(logs);
+  localStorage.setItem(marker, "complete");
+  return changed;
+}
+function runV76Migrations() {
+  const holidayChanged = removeHolidayBlockDefaults();
+  const plansChanged = clearUnstartedPlansFromV76();
+  return holidayChanged || plansChanged;
+}
+function bankExerciseForPlan(key) {
   const entry = bank[key];
   if (!entry) return null;
   const existing = Object.values(library).flat().concat(...Object.values(logs).flatMap(day => Object.values(day.lists || {}).flat()))
@@ -2447,7 +2472,8 @@ function openBackupRestoreModal() {
     library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; libraryUpdatedAt=Math.max(Date.now(),Number(parsed.libraryUpdatedAt)||0); logs=parsed.logs || {}; bank=parsed.bank || {}; bankUpdatedAt=Math.max(Date.now(),Number(parsed.bankUpdatedAt)||0); classes=Array.isArray(parsed.classes)?parsed.classes:[];
     if (Array.isArray(parsed.dayDesignations)) { dayDesignations=normalizeDayDesignations(parsed.dayDesignations); refreshDayDefinitions(); }
     if (parsed.marathon) marathon={...structuredClone(DEFAULT_MARATHON),...parsed.marathon};
-    removeHolidayBlockDefaults();
+    localStorage.removeItem("iron-log-v76-plans-cleared-from-2026-11-23");
+    runV76Migrations();
     localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LIBRARY_UPDATED_AT,String(libraryUpdatedAt)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank)); localStorage.setItem(LS_BANK_UPDATED_AT,String(bankUpdatedAt));
     localStorage.setItem(LS_CLASSES,JSON.stringify(classes)); localStorage.setItem(LS_DAY_DESIGNATIONS,JSON.stringify(dayDesignations)); localStorage.setItem(LS_MARATHON,JSON.stringify(marathon));
     state.selectedDate = todayISO(); state.selectedDayId = null; state.editScope = "routine"; state.tab = "overview";
@@ -3483,6 +3509,14 @@ function openEditExerciseModal(dayId, exId) {
         <label>Number of sets</label>
         <input type="number" id="edit-num-sets" min="1" style="width:80px" />
       </div>
+      <div class="form-row">
+        <label>Apply this edit to</label>
+        <select id="edit-scope">
+          <option value="routine">Reusable routine and future workouts</option>
+          <option value="today">This workout only</option>
+        </select>
+        <div class="field-hint">For a workout that already has logged sets, this defaults to This workout only.</div>
+      </div>
       <div class="form-row" id="edit-custom-unit-row">
         <label>Custom unit label (optional)</label>
         <input type="text" id="edit-custom-unit" placeholder="e.g. laps, rounds — leave blank for default" />
@@ -3518,6 +3552,7 @@ function openEditExerciseModal(dayId, exId) {
   const trackSelect = modal.querySelector("#edit-track");
   const typeSelect = modal.querySelector("#edit-type");
   const numSetsInput = modal.querySelector("#edit-num-sets");
+  const editScopeSelect = modal.querySelector("#edit-scope");
   const weightFields = modal.querySelector("#edit-weight-fields");
   const targetsLabel = modal.querySelector("#edit-targets-label");
   const weightsRow = modal.querySelector("#edit-weights-row");
@@ -3546,6 +3581,7 @@ function openEditExerciseModal(dayId, exId) {
   customUnitInput.value = ex.customUnit || "";
   const n0 = exNumSets(ex);
   numSetsInput.value = n0;
+  editScopeSelect.value = dayLogHasRealData(logs[date], date) ? "today" : (state.editScope === "today" ? "today" : "routine");
   const starting = defaultSets(ex, date);
   const w0 = Array.from({length:n0},(_,i)=>starting[i]?.weight ?? 20);
   setNumberRow(weightsRow, n0, w0, labelFnFor(trackSelect.value));
@@ -3601,7 +3637,8 @@ function openEditExerciseModal(dayId, exId) {
     const customUnit = trackType === "hr_zones" ? null : (customUnitInput.value.trim() || null);
     const updatedEx = { ...ex, name, trackType, type, numSets, weights, targets, customUnit };
 
-    const scope = state.editScope || "routine";
+    const scope = editScopeSelect.value === "today" ? "today" : "routine";
+    state.editScope = scope;
     const newList = getExerciseList(date, dayId).map((e) => (e.id === exId ? updatedEx : e));
     setExerciseList(date, dayId, newList, scope);
     // Routine edits affect future sessions; only a current-workout edit resizes
@@ -3667,5 +3704,6 @@ if (navigator.onLine) {
   pullRemote(true).then(() => runOneTimeCleanupIfNeeded());
 } else {
   setSyncStatus("offline");
+  runV76Migrations();
   runOneTimeCleanupIfNeeded();
 }

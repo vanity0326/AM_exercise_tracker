@@ -1,0 +1,7 @@
+Version 76 deployment notes
+
+1. Deploy this project root to Netlify.
+2. Keep `site/` as the publish directory and `netlify/functions/` as the functions directory, as configured in `netlify.toml`.
+3. Keep the existing shared Netlify Blobs store. Version 76 migrates existing records in place.
+4. The first v76 load clears unstarted plan entries dated November 23, 2026 or later. Days with workout or completed class history are preserved.
+5. The published Exercise Tracker does not include `body.html`; retain `netlify/functions/body.mjs` for the separate Health Tracker endpoint.

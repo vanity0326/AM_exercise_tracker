@@ -1,0 +1,8 @@
+Version 78
+
+- The Log tab now allows choosing a day type directly when a date has no assigned activity. Selecting a type opens its saved reusable routine.
+- The Routines tab now shows exercise counts and full routine contents, with clearer Edit versus Add guidance and duplicate messages.
+- When an unlogged date has an empty date-specific list but a populated saved routine, Log offers to load that routine for the date.
+- Keeps Routine Builder edits separate from date-specific workout edits and preserves completed history.
+- Retains v77's November 27 schedule cleanup, Upper B/Lower B removal, Classes type filter, and all selected tracker upgrades.
+- Updated app asset URLs and service-worker cache to v78.

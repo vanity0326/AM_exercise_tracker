@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v77";
+const APP_VERSION = "v78";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -559,7 +559,7 @@ function pushRemote() {
       const res = await fetch(REMOTE_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library, librarySnapshotVersion:77, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
+        body: JSON.stringify({ library, librarySnapshotVersion:78, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
           replaceAll: forceRemoteReplace }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
@@ -881,7 +881,7 @@ function renderTabs() {
 }
 
 function renderRoutines() {
-  const wrap = el(`<main class="routines-page"><h2>Routine Builder</h2><p class="field-hint">Build reusable exercise lists for each day type and finisher. Changes here update the saved routine for future workouts. In Log, you can still change an individual day without changing its routine.</p><div class="form-row"><label for="routine-builder-list">Routine to build</label><select id="routine-builder-list"></select></div><div class="modal-actions"><button class="btn-primary" id="routine-builder-add">+ Add exercise</button><button class="btn-secondary" id="routine-builder-group">🔗 Create Superset</button></div><div id="routine-builder-items"></div></main>`);
+  const wrap = el(`<main class="routines-page"><h2>Routine Builder</h2><p class="field-hint">Build reusable exercise lists for each day type and finisher. Changes here update the saved routine for future workouts. In Log, you can still change an individual day without changing its routine.</p><div class="form-row"><label for="routine-builder-list">Routine to build</label><select id="routine-builder-list"></select></div><div id="routine-builder-summary"></div><div class="modal-actions"><button class="btn-primary" id="routine-builder-add">+ Add exercise</button><button class="btn-secondary" id="routine-builder-group">🔗 Create Superset</button></div><div id="routine-builder-items"></div></main>`);
   const selector = wrap.querySelector("#routine-builder-list");
   const listKeys = dayDesignations.filter(day => day.loggable).flatMap(day => [day.id, finisherKey(day.id)]);
   if (!listKeys.includes(state.routineBuilderListKey)) state.routineBuilderListKey = listKeys[0] || "upper";
@@ -895,6 +895,8 @@ function renderRoutines() {
   const listKey = state.routineBuilderListKey;
   const items = wrap.querySelector("#routine-builder-items");
   const list = Array.isArray(library[listKey]) ? library[listKey] : [];
+  const baseLabel = dayDesignationLabel(listKey.replace(/_finisher$/, ""));
+  wrap.querySelector("#routine-builder-summary").appendChild(el(`<div class="routine-save-notice"><strong>${safeText(baseLabel)} ${listKey.endsWith("_finisher") ? "finisher" : "routine"} · ${list.length} exercise${list.length === 1 ? "" : "s"}</strong><p>These are the exercises in this saved reusable list. Use Edit on a row to modify an exercise; Add exercise is only for new items. Log can use a different list for an individual date.</p></div>`));
   if (!list.length) items.appendChild(el(`<div class="empty-state">This saved routine is empty. Add exercises here; the day remains editable in Log.</div>`));
   list.forEach((ex, index) => {
     const row = el(`<article class="hist-card routine-builder-row"><div class="hist-card-top"><b>${safeText(ex.name)}</b><span>${exNumSets(ex)} sets</span></div><div class="field-hint">Targets: ${safeText(targetLabelFor(ex))}${ex.trackType === "weight" ? ` · Weights: ${safeText((ex.weights || []).join(" / "))} lbs` : ""}${ex.groupId ? " · Superset" : ""}</div><div class="cl-actions"><button class="btn-secondary routine-edit">Edit</button><button class="btn-secondary routine-up" ${index===0?"disabled":""}>Move up</button><button class="btn-secondary routine-down" ${index===list.length-1?"disabled":""}>Move down</button><button class="btn-secondary routine-remove">Remove</button></div></article>`);
@@ -1730,10 +1732,13 @@ function renderToday() {
   if (runStrip) wrap.appendChild(runStrip);
 
   if (!current) {
-    const prompt = el(`<div class="empty-state">Choose this date’s Primary activity in Plan, then return here to log it.</div>`);
-    const button = el(`<button class="btn-primary plan-from-log">Open Plan</button>`);
-    button.onclick = () => { state.tab = "plan"; render(); };
-    prompt.appendChild(button);
+    const prompt = el(`<div class="empty-state"><strong>No activity is assigned to this date.</strong><p>Choose a day type here to open its saved routine. You can also set the weekly plan in Plan.</p><div class="form-row"><label for="log-day-type">Day type</label><select id="log-day-type"><option value="">Choose a day type…</option></select></div><div class="cl-actions"><button class="btn-primary" id="open-log-day" disabled>Open activity</button><button class="btn-secondary" id="open-plan-from-log">Open Plan</button></div></div>`);
+    const selector = prompt.querySelector("#log-day-type");
+    dayDesignations.forEach(day => selector.appendChild(el(`<option value="${safeText(day.id)}">${safeText(day.label)}</option>`)));
+    const openDay = prompt.querySelector("#open-log-day");
+    selector.onchange = () => { openDay.disabled = !selector.value; };
+    openDay.onclick = () => { if (selector.value) setDayType(selector.value); };
+    prompt.querySelector("#open-plan-from-log").onclick = () => { state.tab = "plan"; render(); };
     wrap.appendChild(prompt);
     return wrap;
   }
@@ -1745,6 +1750,25 @@ function renderToday() {
 
   const dayExercises = getExerciseList(state.selectedDate, current.id);
   const todayLog = logs[state.selectedDate] || { dayId: current.id, entries: {} };
+  const appendRoutineRestorePrompt = (listKey, label) => {
+    const savedRoutine = Array.isArray(library[listKey]) ? library[listKey] : [];
+    const dateList = getExerciseList(state.selectedDate, listKey);
+    if (dateList.length || !savedRoutine.length || dayLogHasRealData(logs[state.selectedDate], state.selectedDate)) return;
+    const panel = el(`<div class="routine-save-notice"><strong>${safeText(label)} is empty for this date.</strong><p>The saved reusable routine has ${savedRoutine.length} exercise${savedRoutine.length === 1 ? "" : "s"}. Load it into this unlogged date?</p><button class="btn-primary">Use saved routine for this date</button></div>`);
+    panel.querySelector("button").onclick = () => {
+      const day = logs[state.selectedDate] ||= {dayId:current.id, entries:{}};
+      if (dayLogHasRealData(day, state.selectedDate)) return;
+      if (day.lists) delete day.lists[listKey];
+      if (day.routineOverrides) delete day.routineOverrides[listKey];
+      if (day.lists && !Object.keys(day.lists).length) delete day.lists;
+      if (day.routineOverrides && !Object.keys(day.routineOverrides).length) delete day.routineOverrides;
+      saveLogs(logs);
+      render();
+    };
+    wrap.appendChild(panel);
+  };
+  appendRoutineRestorePrompt(current.id, current.label + " routine");
+  appendRoutineRestorePrompt(finisherKey(current.id), current.label + " finisher");
 
   if (dayExercises.length === 0) {
     wrap.appendChild(el(`
@@ -3535,7 +3559,13 @@ function openAddExerciseModal(explicitListKey, routineBuilder = false) {
     const visibleExercises = [...primaryList, ...finisherList.filter(ex => !primaryNames.has(bankKey(ex.name || "")))];
     const alreadyOnDate = visibleExercises.some(ex => bankKey(ex.name || "") === bankKey(name));
     if (alreadyOnDate) {
-      alert(`${name} is already in this ${routineBuilder ? "routine" : "date's Log"}. The existing activity remains in place.`);
+      if (routineBuilder) {
+        const inPrimary = primaryList.some(ex => bankKey(ex.name || "") === bankKey(name));
+        const location = `${dayDesignationLabel(visibleDayId)} ${inPrimary ? "routine" : "finisher"}`;
+        alert(`${name} is already in the ${location}. Use Edit on its row to change it; Add exercise only adds new items.`);
+      } else {
+        alert(`${name} is already on this date's Log. The existing activity remains in place.`);
+      }
       document.body.removeChild(overlay);
       render();
       return;

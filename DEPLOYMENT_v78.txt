@@ -1,0 +1,8 @@
+Version 78 deployment notes
+
+1. Deploy this project root to Netlify.
+2. Keep `site/` as the publish directory and `netlify/functions/` as the functions directory, as configured in `netlify.toml`.
+3. Keep the existing shared Netlify Blobs store. The v77 data migration remains in place.
+4. When a date has no assigned activity, choose its day type directly in Log to open that saved routine.
+5. Routine Builder shows saved template contents; Log maintains separate date-specific edits.
+6. The published Exercise Tracker does not include `body.html`; retain `netlify/functions/body.mjs` for the separate Health Tracker endpoint.

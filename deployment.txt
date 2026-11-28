@@ -13,3 +13,5 @@ All suggested dates remain flexible. Users can move or skip sessions, change exe
 The lower-body routines omit calf raises. Leg press is retained within PT-approved range and technique. No cable exercises or gym-core exercises are included. Apple Fitness+ Core is the user's preferred core option. Optional cardio suggestions include elliptical and recumbent bike; follow PT guidance and Achilles symptom response.
 
 The marathon plan remains available but is not required for this strength block. Pilates Reformer remains optional if classes become available. Keep the existing folder structure and deploy all package files together.
+
+Version 79: Upload the full project root to the connected GitHub repository. Netlify publishes site/ and uses netlify/functions/. Keep the existing Netlify Blobs store; per-list routine revisions are stored alongside existing shared data.

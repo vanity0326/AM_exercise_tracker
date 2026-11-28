@@ -1,0 +1,7 @@
+Version 79 deployment notes
+
+1. Upload the full project root to the existing GitHub repository connected to Netlify.
+2. Netlify should continue publishing the `site` folder and using `netlify/functions` for functions, as configured in `netlify.toml`.
+3. Keep the existing Netlify Blobs store; per-routine revision data is added to its existing data record and requires no manual migration.
+4. After deployment, open the app on each device online and wait for the sync status to show Synced. Routine and finisher lists merge by their own update revisions.
+5. The release preserves current workout logs, class history, settings, and other synced data.

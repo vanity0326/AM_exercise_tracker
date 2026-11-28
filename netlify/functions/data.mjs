@@ -39,19 +39,31 @@ export default async (req) => {
     const incomingLibraryVersion = Number(body.librarySnapshotVersion || 0);
     const previousLibraryUpdatedAt = Number(previous?.libraryUpdatedAt || 0);
     const incomingLibraryUpdatedAt = Number(body.libraryUpdatedAt || 0);
-    let library;
-    if (replaceAll || (incomingLibraryVersion >= 75 && incomingLibraryUpdatedAt >= previousLibraryUpdatedAt)) {
+    const previousLibraryKeyUpdatedAt = previous?.libraryKeyUpdatedAt || {};
+    const incomingLibraryKeyUpdatedAt = body.libraryKeyUpdatedAt || {};
+    let library = {};
+    const libraryKeyUpdatedAt = {};
+    if (replaceAll) {
       library = { ...incomingLibrary };
-    } else if (previousLibraryVersion >= 75 || previousLibraryUpdatedAt > incomingLibraryUpdatedAt) {
-      // Ignore stale pre-v75 devices after the v75 snapshot is authoritative.
-      library = { ...previousLibrary };
-    } else if (incomingLibraryVersion >= 75) {
-      library = { ...incomingLibrary };
+      Object.assign(libraryKeyUpdatedAt, incomingLibraryKeyUpdatedAt);
     } else {
-      library = { ...previousLibrary, ...incomingLibrary };
-      for (const [key, list] of Object.entries(previousLibrary)) {
-        if (Array.isArray(list) && list.length && Array.isArray(incomingLibrary[key]) && incomingLibrary[key].length === 0) {
-          library[key] = list;
+      const keys = new Set([...Object.keys(previousLibrary), ...Object.keys(incomingLibrary)]);
+      for (const key of keys) {
+        const oldList = Array.isArray(previousLibrary[key]) ? previousLibrary[key] : [];
+        const newList = Array.isArray(incomingLibrary[key]) ? incomingLibrary[key] : [];
+        const oldRevision = Number(previousLibraryKeyUpdatedAt[key]) || (oldList.length ? previousLibraryUpdatedAt : 0);
+        // Older clients only have a whole-library timestamp. Treat it as a
+        // key update only when they send actual exercises; an empty legacy
+        // snapshot must never erase another device's saved routine.
+        const newRevision = Number(incomingLibraryKeyUpdatedAt[key]) || (newList.length ? incomingLibraryUpdatedAt : 0);
+        const staleLegacyClient = previousLibraryVersion >= 79 && incomingLibraryVersion < 79;
+        const takeIncoming = !staleLegacyClient && (newRevision > oldRevision || (newRevision === oldRevision && incomingLibraryVersion >= 79 && Object.prototype.hasOwnProperty.call(incomingLibrary, key)));
+        if (takeIncoming) {
+          library[key] = newList;
+          if (newRevision) libraryKeyUpdatedAt[key] = newRevision;
+        } else {
+          if (Object.prototype.hasOwnProperty.call(previousLibrary, key)) library[key] = oldList;
+          if (oldRevision) libraryKeyUpdatedAt[key] = oldRevision;
         }
       }
     }
@@ -80,6 +92,7 @@ export default async (req) => {
       library,
       librarySnapshotVersion,
       libraryUpdatedAt,
+      libraryKeyUpdatedAt,
       // Merge by date during ordinary sync so a partial cache cannot wipe
       // history. An explicit backup restore replaces the full dated dataset.
       logs: replaceAll ? (body.logs || {}) : { ...(previous?.logs || {}), ...(body.logs || {}) },

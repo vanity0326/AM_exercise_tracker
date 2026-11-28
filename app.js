@@ -1,5 +1,5 @@
 // ---------- Data ----------
-const APP_VERSION = "v78";
+const APP_VERSION = "v79";
 // Day "type" is now something you assign per date from the Log tab,
 // not a fixed weekly rotation. Every loggable day works identically — its
 // own exercise list, bank-integrated add/edit, circuits, and an optional
@@ -135,7 +135,7 @@ function setExerciseList(date, listKey, list, scope = (state?.editScope || "rout
     if (dayLog.lists) delete dayLog.lists[listKey];
   }
   library[listKey] = list;
-  saveLibrary(library);
+  saveLibrary(library, listKey);
   saveLogs(logs);
 }
 
@@ -250,11 +250,14 @@ function targetLabelFor(ex) {
 // ---------- Storage ----------
 const LS_LIB = "iron-log-library";
 const LS_LIBRARY_UPDATED_AT = "iron-log-library-updated-at";
+const LS_LIBRARY_KEY_UPDATED_AT = "iron-log-library-key-updated-at";
 const LS_LOGS = "iron-log-logs";
 const LS_BANK = "iron-log-bank";
 const LS_BANK_UPDATED_AT = "iron-log-bank-updated-at";
 const LS_LOCAL_UPDATED_AT = "iron-log-local-updated-at";
 let libraryUpdatedAt = Number(localStorage.getItem(LS_LIBRARY_UPDATED_AT) || 0);
+let libraryKeyUpdatedAt = {};
+try { libraryKeyUpdatedAt = JSON.parse(localStorage.getItem(LS_LIBRARY_KEY_UPDATED_AT) || "{}"); } catch (e) { libraryKeyUpdatedAt = {}; }
 let bankUpdatedAt = Number(localStorage.getItem(LS_BANK_UPDATED_AT) || 0);
 
 // Stamped (synchronously, so it survives even an immediate page refresh)
@@ -277,9 +280,12 @@ function loadLibrary() {
     return structuredClone(DEFAULT_LIBRARY);
   }
 }
-function saveLibrary(lib) {
+function saveLibrary(lib, changedKey = null) {
   libraryUpdatedAt = Math.max(Date.now(), libraryUpdatedAt + 1);
+  const changedKeys = changedKey ? [changedKey] : Object.keys(lib || {});
+  changedKeys.forEach(key => { libraryKeyUpdatedAt[key] = libraryUpdatedAt; });
   localStorage.setItem(LS_LIBRARY_UPDATED_AT, String(libraryUpdatedAt));
+  localStorage.setItem(LS_LIBRARY_KEY_UPDATED_AT, JSON.stringify(libraryKeyUpdatedAt));
   localStorage.setItem(LS_LIB, JSON.stringify(lib));
   touchLocalUpdatedAt();
   schedulePush();
@@ -332,26 +338,30 @@ function chooseBankSnapshot(remoteBank, localBank, remoteRevision, localRevision
     revision:Math.max(remoteVersion, localVersion),
   };
 }
-function chooseLibrarySnapshot(remoteLibrary, localLibrary, remoteRevision, localRevision, preferLocalOnTie) {
+function chooseLibrarySnapshot(remoteLibrary, localLibrary, remoteRevision, localRevision, remoteKeyRevisions, localKeyRevisions, preferLocalOnTie) {
   const remoteVersion = Number(remoteRevision) || 0;
   const localVersion = Number(localRevision) || 0;
   const remote = remoteLibrary || {};
   const local = localLibrary || {};
-  if (remoteVersion && localVersion) {
-    if (localVersion > remoteVersion || (localVersion === remoteVersion && preferLocalOnTie)) return {library:{...local}, revision:localVersion};
-    return {library:{...remote}, revision:remoteVersion};
-  }
-  if (remoteVersion && !localVersion) return {library:{...remote}, revision:remoteVersion};
-  if (localVersion && !remoteVersion) return {library:{...local}, revision:localVersion};
-  const merged = preferLocalOnTie ? {...remote,...local} : {...local,...remote};
+  const remoteRevisions = remoteKeyRevisions || {};
+  const localRevisions = localKeyRevisions || {};
+  const merged = {};
   const keys = new Set([...Object.keys(remote), ...Object.keys(local)]);
   for (const key of keys) {
     const remoteList = Array.isArray(remote[key]) ? remote[key] : [];
     const localList = Array.isArray(local[key]) ? local[key] : [];
-    if (remoteList.length && !localList.length) merged[key] = remoteList;
-    else if (localList.length && !remoteList.length) merged[key] = localList;
+    const remoteKeyRevision = Number(remoteRevisions[key]) || (remoteList.length ? remoteVersion : 0);
+    const localKeyRevision = Number(localRevisions[key]) || (localList.length ? localVersion : 0);
+    const takeLocal = localKeyRevision > remoteKeyRevision || (localKeyRevision === remoteKeyRevision && preferLocalOnTie);
+    if (!remoteKeyRevision && !localKeyRevision && remoteList.length !== localList.length) {
+      merged[key] = (localList.length ? local : remote)[key];
+    } else {
+      merged[key] = (takeLocal ? local : remote)[key] ?? [];
+    }
   }
-  return {library:merged, revision:0};
+  const revisions = {};
+  for (const key of keys) revisions[key] = Math.max(Number(remoteRevisions[key]) || (Array.isArray(remote[key]) && remote[key].length ? remoteVersion : 0), Number(localRevisions[key]) || (Array.isArray(local[key]) && local[key].length ? localVersion : 0));
+  return {library:merged, revision:Math.max(remoteVersion, localVersion), keyRevisions:revisions};
 }
 function canonicalDayDesignationId(dayId) {
   if (!dayId) return "";
@@ -443,11 +453,13 @@ async function pullRemote(isInitial) {
         const merged = new Map(remoteClasses.filter(c => c && c.id).map(c => [c.id, c]));
         localClasses.forEach(c => { if (c && c.id) merged.set(c.id, c); });
         classes = [...merged.values()];
-        const selectedLibrary = chooseLibrarySnapshot(remote.library, library, remote.libraryUpdatedAt, libraryUpdatedAt, true);
+        const selectedLibrary = chooseLibrarySnapshot(remote.library, library, remote.libraryUpdatedAt, libraryUpdatedAt, remote.libraryKeyUpdatedAt, libraryKeyUpdatedAt, true);
         library = {...structuredClone(DEFAULT_LIBRARY), ...selectedLibrary.library};
         libraryUpdatedAt = selectedLibrary.revision;
+        libraryKeyUpdatedAt = selectedLibrary.keyRevisions || {};
         localStorage.setItem(LS_LIB, JSON.stringify(library));
         localStorage.setItem(LS_LIBRARY_UPDATED_AT, String(libraryUpdatedAt));
+        localStorage.setItem(LS_LIBRARY_KEY_UPDATED_AT, JSON.stringify(libraryKeyUpdatedAt));
         const selectedBank = chooseBankSnapshot(remote.bank, bank, remote.bankUpdatedAt, bankUpdatedAt, true);
         bank = selectedBank.bank;
         bankUpdatedAt = selectedBank.revision;
@@ -477,13 +489,15 @@ async function pullRemote(isInitial) {
       let repairRemoteWorkoutData = false;
       let relabeledClassTitles = false;
       suppressPush = true;
-      const selectedLibrary = chooseLibrarySnapshot(remote.library, localLibraryBeforePull, remote.libraryUpdatedAt, libraryUpdatedAt, false);
+      const selectedLibrary = chooseLibrarySnapshot(remote.library, localLibraryBeforePull, remote.libraryUpdatedAt, libraryUpdatedAt, remote.libraryKeyUpdatedAt, libraryKeyUpdatedAt, false);
       library = { ...structuredClone(DEFAULT_LIBRARY), ...selectedLibrary.library };
       libraryUpdatedAt = selectedLibrary.revision;
+      libraryKeyUpdatedAt = selectedLibrary.keyRevisions || {};
+      localStorage.setItem(LS_LIBRARY_KEY_UPDATED_AT, JSON.stringify(libraryKeyUpdatedAt));
       // An empty or partial snapshot from one device must not erase routines
       // and dates already stored on another device. Merge by date, preferring
       // the remote copy for dates it actually contains.
-      if (Object.keys(library).length > Object.keys(remote.library || {}).length) repairRemoteWorkoutData = true;
+      if (JSON.stringify(library) !== JSON.stringify(remote.library || {})) repairRemoteWorkoutData = true;
       logs = { ...(localLogsBeforePull || {}), ...(remote.logs || {}) };
       if (Object.keys(logs).length > Object.keys(remote.logs || {}).length) repairRemoteWorkoutData = true;
       const selectedBank = chooseBankSnapshot(remote.bank, localBankBeforePull, remote.bankUpdatedAt, bankUpdatedAt, false);
@@ -559,7 +573,7 @@ function pushRemote() {
       const res = await fetch(REMOTE_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ library, librarySnapshotVersion:78, libraryUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
+        body: JSON.stringify({ library, librarySnapshotVersion:79, libraryUpdatedAt, libraryKeyUpdatedAt, logs, bank, bankUpdatedAt, marathon, classes, dayDesignations,
           replaceAll: forceRemoteReplace }),
       });
       if (!res.ok) throw new Error("push failed: " + res.status);
@@ -2553,7 +2567,7 @@ function openBackupRestoreModal() {
   </div>`);
   let parsed = null;
   modal.querySelector('#backup-download').onclick = () => {
-    const payload = {format:'total-transformation-tracker-backup', version:APP_VERSION, exportedAt:new Date().toISOString(), library, libraryUpdatedAt, logs, bank, bankUpdatedAt, classes, dayDesignations, marathon};
+    const payload = {format:'total-transformation-tracker-backup', version:APP_VERSION, exportedAt:new Date().toISOString(), library, libraryUpdatedAt, libraryKeyUpdatedAt, logs, bank, bankUpdatedAt, classes, dayDesignations, marathon};
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
     const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`total-transformation-tracker-backup-${todayISO()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
@@ -2566,12 +2580,12 @@ function openBackupRestoreModal() {
   modal.querySelector('#backup-restore').onclick = () => {
     if (!parsed) return;
     if (!confirm('Replace the current tracker data with this backup? Current data will be overwritten. Download a backup first if you may need it.')) return;
-    library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; libraryUpdatedAt=Math.max(Date.now(),Number(parsed.libraryUpdatedAt)||0); logs=parsed.logs || {}; bank=parsed.bank || {}; bankUpdatedAt=Math.max(Date.now(),Number(parsed.bankUpdatedAt)||0); classes=Array.isArray(parsed.classes)?parsed.classes:[];
+    library={...structuredClone(DEFAULT_LIBRARY),...parsed.library}; libraryUpdatedAt=Math.max(Date.now(),Number(parsed.libraryUpdatedAt)||0); libraryKeyUpdatedAt={...(parsed.libraryKeyUpdatedAt||{})}; Object.keys(library).forEach(key=>{libraryKeyUpdatedAt[key]=libraryUpdatedAt;}); logs=parsed.logs || {}; bank=parsed.bank || {}; bankUpdatedAt=Math.max(Date.now(),Number(parsed.bankUpdatedAt)||0); classes=Array.isArray(parsed.classes)?parsed.classes:[];
     if (Array.isArray(parsed.dayDesignations)) { dayDesignations=normalizeDayDesignations(parsed.dayDesignations); refreshDayDefinitions(); }
     if (parsed.marathon) marathon={...structuredClone(DEFAULT_MARATHON),...parsed.marathon};
     localStorage.removeItem("iron-log-v77-schedules-cleared-from-2026-11-27");
     runV77Migrations(true);
-    localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LIBRARY_UPDATED_AT,String(libraryUpdatedAt)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank)); localStorage.setItem(LS_BANK_UPDATED_AT,String(bankUpdatedAt));
+    localStorage.setItem(LS_LIB,JSON.stringify(library)); localStorage.setItem(LS_LIBRARY_UPDATED_AT,String(libraryUpdatedAt)); localStorage.setItem(LS_LIBRARY_KEY_UPDATED_AT,JSON.stringify(libraryKeyUpdatedAt)); localStorage.setItem(LS_LOGS,JSON.stringify(logs)); localStorage.setItem(LS_BANK,JSON.stringify(bank)); localStorage.setItem(LS_BANK_UPDATED_AT,String(bankUpdatedAt));
     localStorage.setItem(LS_CLASSES,JSON.stringify(classes)); localStorage.setItem(LS_DAY_DESIGNATIONS,JSON.stringify(dayDesignations)); localStorage.setItem(LS_MARATHON,JSON.stringify(marathon));
     state.selectedDate = todayISO(); state.selectedDayId = null; state.editScope = "routine"; state.tab = "overview";
     forceRemoteReplace = true; touchLocalUpdatedAt(); schedulePush(); overlay.remove(); render();

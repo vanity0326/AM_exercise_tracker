@@ -1,0 +1,7 @@
+Version 79
+
+- Fixes cross-device routine and finisher sync by tracking revisions for each saved list independently.
+- Empty or stale routine libraries on a device no longer overwrite populated lists from another device.
+- Deliberate routine edits, including clearing a list, sync using that list's own revision.
+- Keeps existing logs, classes, settings, and other tracker data unchanged.
+- Updated the service worker cache and app asset versions to v79.
